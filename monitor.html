@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="utf-8">
+    <title>WebGL Monitor</title>
+</head>
+
+<body>
+    <div id="controls" style="flex-wrap: wrap; gap: 5px; margin-top: 10px;">
+        <button id="reset-btn">Reset</button>
+        <button id="save-preset-btn">Save Preset</button>
+        <input type="file" id="load-preset-input" accept="application/json" style="display:none">
+        <button id="load-preset-btn">Load Preset</button>
+        <button id="animate-btn">Animate</button>
+        <label for="animation-preset">Preset:</label>
+        <select id="animation-preset">
+            <option value="spin">Spin</option>
+            <option value="bounce">Bounce</option>
+            <option value="pulse">Pulse</option>
+        </select>
+        <label for="bg-color">Background Color:</label>
+        <input type="color" id="bg-color" value="#ffffff">
+        <button id="download-btn">Download Image</button>
+        <label><input type="checkbox" id="wireframe-mode"> Wireframe mode</label>
+        <label for="scale"><b>Skala:</b></label>
+            <input type="range" id="scale" min="0" max="1" step="0.01" value="1">
+            <span id="scale-value">1</span>
+
+        <div style="flex-direction: column;">
+            <h3>Posisi:</h3>
+            <label for="position-x">X:</label>
+                <input type="range" id="position-x" min="-1" max="1" step="0.01" value="0">
+                <span id="position-x-value">0</span>
+            <label for="position-y">Y:</label>
+                <input type="range" id="position-y" min="-1" max="1" step="0.01" value="0">
+                <span id="position-y-value">0</span>
+            <label for="position-z">Z:</label>
+                <input type="range" id="position-z" min="-1" max="1" step="0.01" value="0">
+                <span id="position-z-value">0</span>
+        </div>
+
+        <div style="flex-direction: column;">
+            <h3>Rotasi:</h3>
+            <label for="rotation-x">X:</label>
+                <input type="range" id="rotation-x" min="-1" max="1" step="0.01" value="0.4">
+                <span id="rotation-x-value">0.4</span>
+            <label for="rotation-y">Y:</label>
+                <input type="range" id="rotation-y" min="-1" max="1" step="0.01" value="0.4">
+                <span id="rotation-y-value">0.4</span>
+            <label for="rotation-z">Z:</label>
+                <input type="range" id="rotation-z" min="-1" max="1" step="0.01" value="0.5">
+                <span id="rotation-z-value">0.5</span>
+        </div>
+    </div>
+
+    <canvas id="gl-canvas" width="512" height="512"> </canvas>
+    <style>
+    body { margin: 0; padding: 0; }
+    #gl-canvas {
+        width: 50%;
+        height: 50%;
+        display: block;
+        border-style: solid;
+    }
+    </style>
+
+    <script>
+    // Reset button functionality
+    var resetBtn = document.getElementById('reset-btn');
+    if (resetBtn) {
+        resetBtn.addEventListener('click', function() {
+            // Set default values for all controls
+            var defaults = {
+                'scale': 1,
+                'position-x': 0,
+                'position-y': 0,
+                'position-z': 0,
+                'rotation-x': 0.4,
+                'rotation-y': 0.4,
+                'rotation-z': 0.5,
+                'bg-color': '#ffffff',
+                'wireframe-mode': false,
+                'animation-preset': 'spin'
+            };
+            Object.keys(defaults).forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) {
+                    if (el.type === 'checkbox') {
+                        el.checked = defaults[id];
+                    } else {
+                        el.value = defaults[id];
+                        el.dispatchEvent(new Event('input'));
+                    }
+                }
+            });
+            // Update displayed values
+            ['scale','position-x','position-y','position-z','rotation-x','rotation-y','rotation-z'].forEach(function(id){
+                var el = document.getElementById(id);
+                var span = document.getElementById(id+'-value');
+                if (el && span) span.textContent = el.value;
+            });
+        });
+    }
+    // Save/Load Preset functionality
+    var savePresetBtn = document.getElementById('save-preset-btn');
+    var loadPresetBtn = document.getElementById('load-preset-btn');
+    var loadPresetInput = document.getElementById('load-preset-input');
+
+    function getPreset() {
+        return {
+            scale: document.getElementById('scale').value,
+            position: {
+                x: document.getElementById('position-x').value,
+                y: document.getElementById('position-y').value,
+                z: document.getElementById('position-z').value
+            },
+            rotation: {
+                x: document.getElementById('rotation-x').value,
+                y: document.getElementById('rotation-y').value,
+                z: document.getElementById('rotation-z').value
+            },
+            bgColor: document.getElementById('bg-color').value,
+            wireframe: document.getElementById('wireframe-mode').checked,
+            animation: {
+                preset: document.getElementById('animation-preset').value
+            }
+            // Add material properties here if present
+        };
+    }
+
+    function applyPreset(preset) {
+        if (preset.scale !== undefined) document.getElementById('scale').value = preset.scale;
+        if (preset.position) {
+            if (preset.position.x !== undefined) document.getElementById('position-x').value = preset.position.x;
+            if (preset.position.y !== undefined) document.getElementById('position-y').value = preset.position.y;
+            if (preset.position.z !== undefined) document.getElementById('position-z').value = preset.position.z;
+        }
+        if (preset.rotation) {
+            if (preset.rotation.x !== undefined) document.getElementById('rotation-x').value = preset.rotation.x;
+            if (preset.rotation.y !== undefined) document.getElementById('rotation-y').value = preset.rotation.y;
+            if (preset.rotation.z !== undefined) document.getElementById('rotation-z').value = preset.rotation.z;
+        }
+        if (preset.bgColor !== undefined) document.getElementById('bg-color').value = preset.bgColor;
+        if (preset.wireframe !== undefined) document.getElementById('wireframe-mode').checked = preset.wireframe;
+        if (preset.animation && preset.animation.preset !== undefined) document.getElementById('animation-preset').value = preset.animation.preset;
+        // Add material properties here if present
+        // Trigger input events to update UI
+        ['scale','position-x','position-y','position-z','rotation-x','rotation-y','rotation-z','bg-color'].forEach(function(id){
+            var el = document.getElementById(id);
+            if (el) el.dispatchEvent(new Event('input'));
+        });
+        document.getElementById('wireframe-mode').dispatchEvent(new Event('change'));
+        document.getElementById('animation-preset').dispatchEvent(new Event('change'));
+    }
+
+    if (savePresetBtn) {
+        savePresetBtn.addEventListener('click', function() {
+            var preset = getPreset();
+            var dataStr = "data:application/json;charset=utf-8," + encodeURIComponent(JSON.stringify(preset, null, 2));
+            var dlAnchor = document.createElement('a');
+            dlAnchor.setAttribute("href", dataStr);
+            dlAnchor.setAttribute("download", "monitor_preset.json");
+            document.body.appendChild(dlAnchor);
+            dlAnchor.click();
+            document.body.removeChild(dlAnchor);
+        });
+    }
+    if (loadPresetBtn && loadPresetInput) {
+        loadPresetBtn.addEventListener('click', function() {
+            loadPresetInput.click();
+        });
+        loadPresetInput.addEventListener('change', function(e) {
+            var file = e.target.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(evt) {
+                try {
+                    var preset = JSON.parse(evt.target.result);
+                    applyPreset(preset);
+                } catch (err) {
+                    alert('Invalid preset file');
+                }
+            };
+            reader.readAsText(file);
+        });
+    }
+    // Update slider value display
+    // Download button functionality
+    var downloadBtn = document.getElementById('download-btn');
+    var canvas = document.getElementById('gl-canvas');
+    downloadBtn.addEventListener('click', function() {
+        // Wait for next animation frame to ensure canvas is rendered
+        requestAnimationFrame(function() {
+            var dataURL = canvas.toDataURL('image/png');
+            var link = document.createElement('a');
+            link.href = dataURL;
+            link.download = 'monitor_screenshot.png';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        });
+    });
+
+    window.addEventListener('DOMContentLoaded', function() {
+        const sliders = [
+            {id: 'scale', span: 'scale-value'},
+            {id: 'position-x', span: 'position-x-value'},
+            {id: 'position-y', span: 'position-y-value'},
+            {id: 'position-z', span: 'position-z-value'},
+            {id: 'rotation-x', span: 'rotation-x-value'},
+            {id: 'rotation-y', span: 'rotation-y-value'},
+            {id: 'rotation-z', span: 'rotation-z-value'}
+        ];
+        sliders.forEach(function(s) {
+            var slider = document.getElementById(s.id);
+            var span = document.getElementById(s.span);
+            if (slider && span) {
+                slider.addEventListener('input', function() {
+                    span.textContent = slider.value;
+                });
+                // Set initial value
+                span.textContent = slider.value;
+            }
+        });
+
+        // Mouse drag to rotate
+        var rotXSlider = document.getElementById('rotation-x');
+        var rotYSlider = document.getElementById('rotation-y');
+        var rotXValue = document.getElementById('rotation-x-value');
+        var rotYValue = document.getElementById('rotation-y-value');
+        var dragging = false;
+        var lastX = 0, lastY = 0;
+
+        canvas.addEventListener('mousedown', function(e) {
+            dragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+        });
+        window.addEventListener('mouseup', function() {
+            dragging = false;
+        });
+        window.addEventListener('mousemove', function(e) {
+            if (!dragging) return;
+            var dx = e.clientX - lastX;
+            var dy = e.clientY - lastY;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            // Sensitivity factor
+            var factor = 0.005;
+            // Update rotation sliders
+            var newRotX = parseFloat(rotXSlider.value) + dy * factor;
+            var newRotY = parseFloat(rotYSlider.value) + dx * factor;
+            // Clamp between 0 and 1
+            newRotX = Math.max(0, Math.min(1, newRotX));
+            newRotY = Math.max(0, Math.min(1, newRotY));
+            rotXSlider.value = newRotX;
+            rotYSlider.value = newRotY;
+            rotXValue.textContent = newRotX.toFixed(2);
+            rotYValue.textContent = newRotY.toFixed(2);
+            // Optionally, trigger input event for live update
+            rotXSlider.dispatchEvent(new Event('input'));
+            rotYSlider.dispatchEvent(new Event('input'));
+        });
+    });
+    </script>
+
+<script id="vertex-shader" type="x-shader/x-vertex">
+#version 300 es
+
+in vec4 aPosition;
+in vec4 aColor;
+out vec4 vColor;
+
+uniform mat4 modelViewMatrix;
+uniform vec3 uPosition;
+uniform vec3 uRotation;
+uniform float uScale;
+
+mat4 getRotationMatrix(vec3 rot) {
+    float cx = cos(rot.x), sx = sin(rot.x);
+    float cy = cos(rot.y), sy = sin(rot.y);
+    float cz = cos(rot.z), sz = sin(rot.z);
+    mat4 rx = mat4(
+        1, 0, 0, 0,
+        0, cx, -sx, 0,
+        0, sx, cx, 0,
+        0, 0, 0, 1
+    );
+    mat4 ry = mat4(
+        cy, 0, sy, 0,
+        0, 1, 0, 0,
+        -sy, 0, cy, 0,
+        0, 0, 0, 1
+    );
+    mat4 rz = mat4(
+        cz, -sz, 0, 0,
+        sz, cz, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1
+    );
+    return rz * ry * rx;
+}
+
+void main() {
+    mat4 scaleMat = mat4(
+        uScale, 0, 0, 0,
+        0, uScale, 0, 0,
+        0, 0, uScale, 0,
+        0, 0, 0, 1
+    );
+    mat4 transMat = mat4(
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        uPosition.x, uPosition.y, uPosition.z, 1
+    );
+    mat4 rotMat = getRotationMatrix(uRotation);
+    mat4 modelMat = transMat * rotMat * scaleMat;
+    vColor = aColor;
+    gl_Position = modelViewMatrix * modelMat * aPosition;
+}
+</script>
+
+<script id="fragment-shader" type="x-shader/x-fragment">
+#version 300 es
+
+precision mediump float;
+
+in vec4 vColor;
+out vec4 fColor;
+
+void
+main()
+{
+    fColor = vColor;
+}
+</script>
+
+<script src="initShaders.js"></script>
+<script src="MVnew.js"></script>
+<script src="monitor.js"></script>
+
+</body>
+</html>
