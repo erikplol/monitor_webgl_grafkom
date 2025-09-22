@@ -29,7 +29,6 @@ function init() {
     gl = canvas.getContext('webgl2');
     if (!gl) alert("WebGL 2.0 isn't available");
 
-    gl.viewport(0, 0, canvas.width, canvas.height);
     gl.clearColor(1.0, 1.0, 1.0, 1.0);
     gl.enable(gl.DEPTH_TEST);
 
@@ -43,9 +42,7 @@ function init() {
     modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
     projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
 
-    projectionMatrix = perspective(50.0, canvas.width / canvas.height, 0.1, 100.0);
-    gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
-
+    // Initial projection matrix will be set by setupResponsiveCanvas
     setupEventListeners();
     render();
 }
@@ -584,17 +581,21 @@ function setupEventListeners() {
         }
     });
 
-    // Kontrol rotasi dengan mouse pada canvas
+    // Kontrol rotasi dengan mouse dan touch pada canvas
     const cvs = canvas; // sudah diinisialisasi di init()
     if (cvs) {
         cvs.style.cursor = 'grab';
+        
+        // Mouse events
         cvs.addEventListener('mousedown', (e) => {
             if (e.button !== 0) return; // hanya tombol kiri
             isDragging = true;
             lastMouseX = e.clientX;
             lastMouseY = e.clientY;
             cvs.style.cursor = 'grabbing';
+            e.preventDefault();
         });
+        
         window.addEventListener('mousemove', (e) => {
             if (!isDragging) return;
             const dx = e.clientX - lastMouseX;
@@ -606,10 +607,99 @@ function setupEventListeners() {
             // Batasi pitch agar tidak terbalik
             mouseRotX = Math.max(-89, Math.min(89, mouseRotX));
         });
-        const endDrag = () => { if (isDragging) { isDragging = false; cvs.style.cursor = 'grab'; } };
+        
+        const endDrag = () => { 
+            if (isDragging) { 
+                isDragging = false; 
+                cvs.style.cursor = 'grab'; 
+            } 
+        };
+        
         window.addEventListener('mouseup', endDrag);
         cvs.addEventListener('mouseleave', endDrag);
+        
+        // Touch events for mobile
+        cvs.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                isDragging = true;
+                const touch = e.touches[0];
+                lastMouseX = touch.clientX;
+                lastMouseY = touch.clientY;
+                e.preventDefault();
+            }
+        });
+        
+        cvs.addEventListener('touchmove', (e) => {
+            if (!isDragging || e.touches.length !== 1) return;
+            const touch = e.touches[0];
+            const dx = touch.clientX - lastMouseX;
+            const dy = touch.clientY - lastMouseY;
+            lastMouseX = touch.clientX;
+            lastMouseY = touch.clientY;
+            mouseRotY += dx * mouseSensitivity * 0.8; // Slightly less sensitive on touch
+            mouseRotX += dy * mouseSensitivity * 0.8;
+            // Batasi pitch agar tidak terbalik
+            mouseRotX = Math.max(-89, Math.min(89, mouseRotX));
+            e.preventDefault();
+        });
+        
+        cvs.addEventListener('touchend', (e) => {
+            endDrag();
+            e.preventDefault();
+        });
+        
+        cvs.addEventListener('touchcancel', (e) => {
+            endDrag();
+            e.preventDefault();
+        });
+        
         // Nonaktifkan menu konteks saat klik kanan di canvas
         cvs.addEventListener('contextmenu', (e) => e.preventDefault());
+        
+        // Prevent scrolling when touching the canvas
+        cvs.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
+        cvs.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
     }
+    
+    // Setup responsive canvas
+    setupResponsiveCanvas();
+}
+
+function setupResponsiveCanvas() {
+    function resizeCanvas() {
+        const canvasContainer = canvas.parentElement;
+        const rect = canvasContainer.getBoundingClientRect();
+        
+        // Calculate the size based on container and screen size
+        let size = Math.min(rect.width - 20, window.innerHeight * 0.7, 800);
+        
+        // Ensure minimum size for usability
+        size = Math.max(size, 350);
+        
+        // Update canvas dimensions
+        canvas.width = size;
+        canvas.height = size;
+        
+        // Update CSS size to match
+        canvas.style.width = size + 'px';
+        canvas.style.height = size + 'px';
+        
+        // Update WebGL viewport
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        
+        // Update projection matrix with new aspect ratio
+        projectionMatrix = perspective(50.0, canvas.width / canvas.height, 0.1, 100.0);
+        gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
+    }
+    
+    // Initial resize
+    resizeCanvas();
+    
+    // Listen for window resize events
+    window.addEventListener('resize', resizeCanvas);
+    
+    // Listen for orientation change on mobile
+    window.addEventListener('orientationchange', function() {
+        setTimeout(resizeCanvas, 100); // Small delay to ensure layout is updated
+    });
 }
