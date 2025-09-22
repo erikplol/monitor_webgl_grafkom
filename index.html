@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>WebGL Monitor Interaktif</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            gap: 20px;
+        }
+        #gl-canvas {
+            border: 1px solid #ccc;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+        }
+        #ui-panel {
+            width: 350px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .control-group {
+            background-color: #ffffff;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .control-group h3 {
+            margin-top: 0;
+            margin-bottom: 15px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 10px;
+        }
+        .control-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+        .control-row label {
+            font-weight: 500;
+            flex-basis: 60px;
+        }
+        .control-row input[type="range"] {
+            flex-grow: 1;
+        }
+        .control-row span {
+            min-width: 40px;
+            text-align: right;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, Courier, monospace;
+        }
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        button {
+            padding: 8px 12px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+            background-color: #fff;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #f5f5f5;
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="gl-canvas" width="600" height="600"></canvas>
+
+    <div id="ui-panel">
+        <div class="control-group">
+            <h3>Transformasi</h3>
+            <div class="control-row">
+                <label for="scale">Skala:</label>
+                <input type="range" id="scale" min="0.1" max="2" step="0.01" value="1">
+                <span id="scale-value">1.00</span>
+            </div>
+            <h4>Posisi:</h4>
+            <div class="control-row">
+                <label for="position-x">X:</label>
+                <input type="range" id="position-x" min="-1" max="1" step="0.01" value="0">
+                <span id="position-x-value">0.00</span>
+            </div>
+            <div class="control-row">
+                <label for="position-y">Y:</label>
+                <input type="range" id="position-y" min="-1" max="1" step="0.01" value="0">
+                <span id="position-y-value">0.00</span>
+            </div>
+            <div class="control-row">
+                <label for="position-z">Z:</label>
+                <input type="range" id="position-z" min="-1" max="1" step="0.01" value="0">
+                <span id="position-z-value">0.00</span>
+            </div>
+            <h4>Rotasi:</h4>
+            <div class="control-row">
+                <label for="rotation-x">X:</label>
+                <input type="range" id="rotation-x" min="0" max="360" step="1" value="20">
+                <span id="rotation-x-value">20</span>
+            </div>
+            <div class="control-row">
+                <label for="rotation-y">Y:</label>
+                <input type="range" id="rotation-y" min="0" max="360" step="1" value="30">
+                <span id="rotation-y-value">30</span>
+            </div>
+            <div class="control-row">
+                <label for="rotation-z">Z:</label>
+                <input type="range" id="rotation-z" min="0" max="360" step="1" value="0">
+                <span id="rotation-z-value">0</span>
+            </div>
+        </div>
+
+        <div class="control-group">
+            <h3>Tampilan & Animasi</h3>
+            <div class="control-row">
+                <label for="bg-color">Background:</label>
+                <input type="color" id="bg-color" value="#ffffff">
+            </div>
+            <div class="control-row">
+                <label for="wireframe-mode">Wireframe:</label>
+                <input type="checkbox" id="wireframe-mode" style="width: auto;">
+            </div>
+            <div class="button-group">
+                 <button id="animate-btn">Mulai Animasi</button>
+                <select id="animation-preset">
+                    <option value="spin">Spin</option>
+                    <option value="bounce">Bounce</option>
+                    <option value="pulse">Pulse</option>
+                </select>
+            </div>
+        </div>
+
+      
+    
+
+    
+    <script id="vertex-shader" type="x-shader/x-vertex">
+    #version 300 es
+    in vec4 aPosition;
+    in vec4 aColor;
+    out vec4 vColor;
+
+    uniform mat4 modelViewMatrix;
+    uniform mat4 projectionMatrix;
+
+    void main() {
+        vColor = aColor;
+        gl_Position = projectionMatrix * modelViewMatrix * aPosition;
+    }
+    </script>
+
+    <script id="fragment-shader" type="x-shader/x-fragment">
+    #version 300 es
+    precision mediump float;
+    in vec4 vColor;
+    out vec4 fColor;
+    void main() {
+        fColor = vColor;
+    }
+    </script>
+
+    <script src="initShaders.js"></script>
+    <script src="MVnew.js"></script>
+    <script src="monitor.js"></script>
+</body>
+</html>
