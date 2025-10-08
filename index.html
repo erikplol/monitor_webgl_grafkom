@@ -7,83 +7,210 @@
     <link rel="stylesheet" href="style.css">
 </head>
 
-<body>
-    <div class="screen-info" id="screen-info">Mobile View</div>
-    
+<body>    
     <div class="main-container">
         <div class="canvas-container">
             <canvas id="gl-canvas" width="800" height="800"></canvas>
             <p class="student-info">
-                Klik dan drag untuk memutar monitor.
-            </p>
-            <p class="student-info">
                 Medericus Mundi Miseridityo/5025231169<br>
                 Muhammad Baihaqi Dawanis/5025231177
-            </p>
+            </p> 
+        </div>
+
+        <div class="photo-carousel">
+            <h3>Perbandingan Foto</h3>
+            <div class="carousel-container">
+                <button class="carousel-btn prev-btn" id="prev-btn">❮</button>
+                <div class="carousel-images">
+                    <img src="foto/foto1.jpeg" alt="Foto 1" class="carousel-image active">
+                    <img src="foto/foto2.jpeg" alt="Foto 2" class="carousel-image">
+                    <img src="foto/foto3.jpeg" alt="Foto 3" class="carousel-image">
+                    <img src="foto/foto4.jpeg" alt="Foto 4" class="carousel-image">
+                </div>
+                <button class="carousel-btn next-btn" id="next-btn">❯</button>
+            </div>
+            <div class="carousel-indicators">
+                <span class="indicator active" data-index="0"></span>
+                <span class="indicator" data-index="1"></span>
+                <span class="indicator" data-index="2"></span>
+                <span class="indicator" data-index="3"></span>
+            </div>
+            <div class="photo-counter">
+                <span id="current-photo">1</span> / 4
+            </div>
         </div>
 
         <div id="ui-panel">
-        <div class="control-group">
-            <h3>Transformasi</h3>
-            <div class="control-row">
-                <label for="scale">Skala:</label>
-                <input type="range" id="scale" min="0.1" max="2" step="0.01" value="2">
-                <span id="scale-value">2.00</span>
+            <div class="control-group">
+                <h3>Projection Control</h3>
+                <div class="control-row">
+                    <label>Mode:</label>
+                    <select id="projection-mode" title="Select projection mode">
+                        <option value="perspective">Perspective</option>
+                        <option value="orthogonal">Orthogonal</option>
+                    </select>
+                </div>
+                <h4>Perspective Settings:</h4>
+                <div class="control-row">
+                    <label for="fov">Field of View:</label>
+                    <input type="range" id="fov" min="10" max="120" step="1" value="50">
+                    <span id="fov-value">50°</span>
+                </div>
+                <div class="control-row">
+                    <label for="near-plane">Near Plane:</label>
+                    <input type="range" id="near-plane" min="0.1" max="2" step="0.1" value="0.1">
+                    <span id="near-plane-value">0.1</span>
+                </div>
+                <div class="control-row">
+                    <label for="far-plane">Far Plane:</label>
+                    <input type="range" id="far-plane" min="10" max="200" step="5" value="100">
+                    <span id="far-plane-value">100</span>
+                </div>
+                <h4>Orthogonal Settings:</h4>
+                <div class="control-row">
+                    <label for="ortho-left">Left:</label>
+                    <input type="range" id="ortho-left" min="-5" max="0" step="0.1" value="-2">
+                    <span id="ortho-left-value">-2</span>
+                </div>
+                <div class="control-row">
+                    <label for="ortho-right">Right:</label>
+                    <input type="range" id="ortho-right" min="0" max="5" step="0.1" value="2">
+                    <span id="ortho-right-value">2</span>
+                </div>
+                <div class="control-row">
+                    <label for="ortho-bottom">Bottom:</label>
+                    <input type="range" id="ortho-bottom" min="-5" max="0" step="0.1" value="-2">
+                    <span id="ortho-bottom-value">-2</span>
+                </div>
+                <div class="control-row">
+                    <label for="ortho-top">Top:</label>
+                    <input type="range" id="ortho-top" min="0" max="5" step="0.1" value="2">
+                    <span id="ortho-top-value">2</span>
+                </div>
             </div>
-            <h4>Posisi:</h4>
-            <div class="control-row">
-                <label for="position-x">X:</label>
-                <input type="range" id="position-x" min="-1" max="1" step="0.01" value="0">
-                <span id="position-x-value">0.00</span>
-            </div>
-            <div class="control-row">
-                <label for="position-y">Y:</label>
-                <input type="range" id="position-y" min="-1" max="1" step="0.01" value="0">
-                <span id="position-y-value">0.00</span>
-            </div>
-            <div class="control-row">
-                <label for="position-z">Z:</label>
-                <input type="range" id="position-z" min="-1" max="1" step="0.01" value="0">
-                <span id="position-z-value">0.00</span>
-            </div>
-            <h4>Rotasi:</h4>
-            <div class="control-row">
-                <label for="rotation-x">X:</label>
-                <input type="range" id="rotation-x" min="0" max="360" step="1" value="20">
-                <span id="rotation-x-value">20</span>
-            </div>
-            <div class="control-row">
-                <label for="rotation-y">Y:</label>
-                <input type="range" id="rotation-y" min="0" max="360" step="1" value="30">
-                <span id="rotation-y-value">30</span>
-            </div>
-            <div class="control-row">
-                <label for="rotation-z">Z:</label>
-                <input type="range" id="rotation-z" min="0" max="360" step="1" value="0">
-                <span id="rotation-z-value">0</span>
-            </div>
-        </div>
 
-        <div class="control-group">
-            <h3>Tampilan & Animasi</h3>
-            <div class="control-row">
-                <label for="bg-color">Background:</label>
-                <input type="color" id="bg-color" value="#ffffff">
+            <div class="control-group">
+                <h3>Camera Control</h3>
+                <h4>Eye Position:</h4>
+                <div class="control-row">
+                    <label for="eye-x">Eye X:</label>
+                    <input type="range" id="eye-x" min="-10" max="10" step="0.1" value="0">
+                    <span id="eye-x-value">0.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="eye-y">Eye Y:</label>
+                    <input type="range" id="eye-y" min="-10" max="10" step="0.1" value="0">
+                    <span id="eye-y-value">0.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="eye-z">Eye Z:</label>
+                    <input type="range" id="eye-z" min="-10" max="10" step="0.1" value="3">
+                    <span id="eye-z-value">3.0</span>
+                </div>
+                <h4>Look At Point:</h4>
+                <div class="control-row">
+                    <label for="at-x">At X:</label>
+                    <input type="range" id="at-x" min="-10" max="10" step="0.1" value="0">
+                    <span id="at-x-value">0.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="at-y">At Y:</label>
+                    <input type="range" id="at-y" min="-10" max="10" step="0.1" value="0">
+                    <span id="at-y-value">0.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="at-z">At Z:</label>
+                    <input type="range" id="at-z" min="-10" max="10" step="0.1" value="0">
+                    <span id="at-z-value">0.0</span>
+                </div>
+                <h4>Up Vector:</h4>
+                <div class="control-row">
+                    <label for="up-x">Up X:</label>
+                    <input type="range" id="up-x" min="-1" max="1" step="0.1" value="0">
+                    <span id="up-x-value">0.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="up-y">Up Y:</label>
+                    <input type="range" id="up-y" min="-1" max="1" step="0.1" value="1">
+                    <span id="up-y-value">1.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="up-z">Up Z:</label>
+                    <input type="range" id="up-z" min="-1" max="1" step="0.1" value="0">
+                    <span id="up-z-value">0.0</span>
+                </div>
+                <div class="button-group">
+                    <label>Camera Presets:</label>
+                    <button type="button" onclick="setCameraPreset('front')">Front</button>
+                    <button type="button" onclick="setCameraPreset('back')">Back</button>
+                    <button type="button" onclick="setCameraPreset('top')">Top</button>
+                    <button type="button" onclick="setCameraPreset('bottom')">Bottom</button>
+                    <button type="button" onclick="setCameraPreset('left')">Left</button>
+                    <button type="button" onclick="setCameraPreset('right')">Right</button>
+                    <button type="button" onclick="setCameraPreset('isometric')">Isometric</button>
+                </div>
             </div>
-            <div class="control-row">
-                <label for="wireframe-mode">Wireframe:</label>
-                <input type="checkbox" id="wireframe-mode">
+
+            <div class="control-group">
+                <h3>Transform Controls</h3>
+                <div class="control-row">
+                    <label for="scale">Scale:</label>
+                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="1">
+                    <span id="scale-value">1.00</span>
+                </div>
+                <h4>Position:</h4>
+                <div class="control-row">
+                    <label for="position-x">X:</label>
+                    <input type="range" id="position-x" min="-2" max="2" step="0.01" value="0">
+                    <span id="position-x-value">0.00</span>
+                </div>
+                <div class="control-row">
+                    <label for="position-y">Y:</label>
+                    <input type="range" id="position-y" min="-2" max="2" step="0.01" value="0">
+                    <span id="position-y-value">0.00</span>
+                </div>
+                <div class="control-row">
+                    <label for="position-z">Z:</label>
+                    <input type="range" id="position-z" min="-5" max="5" step="0.01" value="0">
+                    <span id="position-z-value">0.00</span>
+                </div>
+                <h4>Rotation:</h4>
+                <div class="control-row">
+                    <label for="rotation-x">X:</label>
+                    <input type="range" id="rotation-x" min="0" max="360" step="1" value="20">
+                    <span id="rotation-x-value">20</span>
+                </div>
+                <div class="control-row">
+                    <label for="rotation-y">Y:</label>
+                    <input type="range" id="rotation-y" min="0" max="360" step="1" value="30">
+                    <span id="rotation-y-value">30</span>
+                </div>
+                <div class="control-row">
+                    <label for="rotation-z">Z:</label>
+                    <input type="range" id="rotation-z" min="0" max="360" step="1" value="0">
+                    <span id="rotation-z-value">0</span>
+                </div>
             </div>
-            <div class="button-group">
-                 <button id="animate-btn">Mulai Animasi</button>
-                <select id="animation-preset" title="Pilih preset animasi">
-                    <option value="spin">Spin</option>
-                    <option value="bounce">Bounce</option>
-                    <option value="pulse">Pulse</option>
-                </select>
+
+            <div class="control-group">
+                <h3>Display & Animation</h3>
+                <div class="control-row">
+                    <label for="bg-color">Background:</label>
+                    <input type="color" id="bg-color" value="#ffffff">
+                </div>
+                <div class="control-row">
+                    <label for="wireframe-mode">Wireframe:</label>
+                    <input type="checkbox" id="wireframe-mode">
+                </div>
+                <div class="button-group">
+                    <button id="animate-btn">Start Animation</button>
+                    <select id="animation-preset" title="Select animation preset">
+                        <option value="spin">Spin</option>
+                        <option value="bounce">Bounce</option>
+                        <option value="pulse">Pulse</option>
+                    </select>
+                </div>
             </div>
-        </div>
-        
         </div>
     </div>
 

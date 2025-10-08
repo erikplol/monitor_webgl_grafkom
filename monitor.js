@@ -3,8 +3,16 @@ let canvas, gl, program;
 let modelViewMatrix, projectionMatrix, modelViewMatrixLoc, projectionMatrixLoc;
 let vertices = [], vertexColors = [], indices = [];
 let isAnimating = false, animationPreset = 'spin', animationTime = 0;
-let isDragging = false, lastMouseX = 0, lastMouseY = 0, mouseRotX = 0, mouseRotY = 0;
-const mouseSensitivity = 0.4;
+
+// Projection control variables
+let projectionMode = 'perspective';
+let fov = 50, nearPlane = 0.1, farPlane = 100;
+let orthoLeft = -2, orthoRight = 2, orthoBottom = -2, orthoTop = 2;
+
+// Camera control variables
+let eyeX = 0, eyeY = 0, eyeZ = 3;
+let atX = 0, atY = 0, atZ = 0;
+let upX = 0, upY = 1, upZ = 0;
 
 init();
 
@@ -24,7 +32,13 @@ function init() {
 
     modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
     projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
+    
     setupEventListeners();
+    
+    // Initialize projection matrix and UI
+    updateProjectionMatrix();
+    updateProjectionUI();
+    
     render();
 }
 
@@ -436,6 +450,7 @@ function render() {
     let posX = +get('position-x').value, posY = +get('position-y').value, posZ = +get('position-z').value;
     let rotX = +get('rotation-x').value, rotY = +get('rotation-y').value, rotZ = +get('rotation-z').value;
     let scaleValue = +get('scale').value;
+    
     if (isAnimating) {
         animationTime += 0.016;
         if (animationPreset === 'spin') {
@@ -452,24 +467,62 @@ function render() {
             get('scale-value').textContent = scaleValue.toFixed(2);
         }
     }
+    
     const [r, g, b] = hexToRgb(bgColor);
     gl.clearColor(r, g, b, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-    let mvm = mat4();
-    mvm = mult(mvm, translate(0, 0, -3));
+    
+    // Update projection matrix
+    updateProjectionMatrix();
+    
+    // Model-view matrix transformations
+    let eye = vec3(eyeX, eyeY, eyeZ);
+    let at = vec3(atX, atY, atZ);
+    let up = vec3(upX, upY, upZ);
+    let mvm = lookAt(eye, at, up);
+    
     mvm = mult(mvm, translate(posX, posY, posZ));
-    const finalRotY = rotY + mouseRotY, finalRotX = rotX + mouseRotX;
     mvm = mult(mvm, rotate(rotZ, vec3(0, 0, 1)));
-    mvm = mult(mvm, rotate(finalRotY, vec3(0, 1, 0)));
-    mvm = mult(mvm, rotate(finalRotX, vec3(1, 0, 0)));
+    mvm = mult(mvm, rotate(rotY, vec3(0, 1, 0)));
+    mvm = mult(mvm, rotate(rotX, vec3(1, 0, 0)));
     mvm = mult(mvm, scale(scaleValue, scaleValue, scaleValue));
+    
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvm));
+    
     if (get('wireframe-mode').checked) {
-        for (let i = 0; i < indices.length; i += 3) gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+        for (let i = 0; i < indices.length; i += 3) 
+            gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
     } else {
         gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
     }
+    
     requestAnimationFrame(render);
+}
+
+// Function to update UI based on projection mode
+function updateProjectionUI() {
+    const perspectiveSettings = document.querySelectorAll('#fov, #near-plane, #far-plane').forEach(el => {
+        if (el && el.closest('.control-row')) {
+            el.closest('.control-row').style.display = projectionMode === 'perspective' ? 'flex' : 'none';
+        }
+    });
+    
+    const orthoSettings = document.querySelectorAll('#ortho-left, #ortho-right, #ortho-bottom, #ortho-top').forEach(el => {
+        if (el && el.closest('.control-row')) {
+            el.closest('.control-row').style.display = projectionMode === 'orthogonal' ? 'flex' : 'none';
+        }
+    });
+    
+    // Update h4 headers visibility
+    const h4Elements = document.querySelectorAll('h4');
+    h4Elements.forEach(h4 => {
+        if (h4.textContent.includes('Perspective')) {
+            h4.style.display = projectionMode === 'perspective' ? 'block' : 'none';
+        }
+        if (h4.textContent.includes('Orthogonal')) {
+            h4.style.display = projectionMode === 'orthogonal' ? 'block' : 'none';
+        }
+    });
 }
 
 // Convert hex color to normalized RGB
@@ -478,11 +531,176 @@ function hexToRgb(hex) {
     return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
+// Calculate projection matrix based on current settings
+function updateProjectionMatrix() {
+    const aspect = canvas.width / canvas.height;
+    
+    if (projectionMode === 'perspective') {
+        projectionMatrix = perspective(fov, aspect, nearPlane, farPlane);
+    } else {
+        projectionMatrix = ortho(orthoLeft, orthoRight, orthoBottom, orthoTop, nearPlane, farPlane);
+    }
+    
+    gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
+}
+
+// Camera preset functions
+function setCameraPreset(preset) {
+    switch(preset) {
+        case 'front':
+            eyeX = 0; eyeY = 0; eyeZ = 3;
+            atX = 0; atY = 0; atZ = 0;
+            upX = 0; upY = 1; upZ = 0;
+            break;
+        case 'back':
+            eyeX = 0; eyeY = 0; eyeZ = -3;
+            atX = 0; atY = 0; atZ = 0;
+            upX = 0; upY = 1; upZ = 0;
+            break;
+        case 'top':
+            eyeX = 0; eyeY = 3; eyeZ = 0;
+            atX = 0; atY = 0; atZ = 0;
+            upX = 0; upY = 0; upZ = -1;
+            break;
+        case 'bottom':
+            eyeX = 0; eyeY = -3; eyeZ = 0;
+            atX = 0; atY = 0; atZ = 0;
+            upX = 0; upY = 0; upZ = 1;
+            break;
+        case 'left':
+            eyeX = -3; eyeY = 0; eyeZ = 0;
+            atX = 0; atY = 0; atZ = 0;
+            upX = 0; upY = 1; upZ = 0;
+            break;
+        case 'right':
+            eyeX = 3; eyeY = 0; eyeZ = 0;
+            atX = 0; atY = 0; atZ = 0;
+            upX = 0; upY = 1; upZ = 0;
+            break;
+        case 'isometric':
+            eyeX = 2; eyeY = 2; eyeZ = 2;
+            atX = 0; atY = 0; atZ = 0;
+            upX = 0; upY = 1; upZ = 0;
+            break;
+    }
+    updateCameraUI();
+}
+
+// Update camera UI values
+function updateCameraUI() {
+    const cameraValues = {
+        'eye-x': eyeX, 'eye-y': eyeY, 'eye-z': eyeZ,
+        'at-x': atX, 'at-y': atY, 'at-z': atZ,
+        'up-x': upX, 'up-y': upY, 'up-z': upZ
+    };
+    
+    Object.entries(cameraValues).forEach(([id, value]) => {
+        const slider = document.getElementById(id);
+        const span = document.getElementById(id + '-value');
+        if (slider && span) {
+            slider.value = value;
+            span.textContent = value.toFixed(1);
+        }
+    });
+}
+
 function setupEventListeners() {
+    // Projection mode controls
+    const projModeSelect = document.getElementById('projection-mode');
+    if (projModeSelect) {
+        projModeSelect.addEventListener('change', (e) => {
+            projectionMode = e.target.value;
+            updateProjectionMatrix();
+            updateProjectionUI();
+        });
+    }
+    
+    // Perspective controls
+    const perspectiveControls = [
+        { id: 'fov', variable: 'fov', suffix: '°' },
+        { id: 'near-plane', variable: 'nearPlane', suffix: '' },
+        { id: 'far-plane', variable: 'farPlane', suffix: '' }
+    ];
+    
+    perspectiveControls.forEach(control => {
+        const slider = document.getElementById(control.id);
+        const span = document.getElementById(control.id + '-value');
+        if (slider && span) {
+            slider.addEventListener('input', () => {
+                const value = parseFloat(slider.value);
+                if (control.variable === 'fov') fov = value;
+                else if (control.variable === 'nearPlane') nearPlane = value;
+                else if (control.variable === 'farPlane') farPlane = value;
+                
+                span.textContent = value.toFixed(control.id === 'fov' ? 0 : 1) + control.suffix;
+                updateProjectionMatrix();
+            });
+        }
+    });
+    
+    // Orthogonal controls
+    const orthoControls = [
+        { id: 'ortho-left', variable: 'orthoLeft' },
+        { id: 'ortho-right', variable: 'orthoRight' },
+        { id: 'ortho-bottom', variable: 'orthoBottom' },
+        { id: 'ortho-top', variable: 'orthoTop' }
+    ];
+    
+    orthoControls.forEach(control => {
+        const slider = document.getElementById(control.id);
+        const span = document.getElementById(control.id + '-value');
+        if (slider && span) {
+            slider.addEventListener('input', () => {
+                const value = parseFloat(slider.value);
+                if (control.variable === 'orthoLeft') orthoLeft = value;
+                else if (control.variable === 'orthoRight') orthoRight = value;
+                else if (control.variable === 'orthoBottom') orthoBottom = value;
+                else if (control.variable === 'orthoTop') orthoTop = value;
+                
+                span.textContent = value.toFixed(1);
+                updateProjectionMatrix();
+            });
+        }
+    });
+    
+    // Camera position controls
+    const cameraControls = [
+        { id: 'eye-x', variable: 'eyeX' },
+        { id: 'eye-y', variable: 'eyeY' },
+        { id: 'eye-z', variable: 'eyeZ' },
+        { id: 'at-x', variable: 'atX' },
+        { id: 'at-y', variable: 'atY' },
+        { id: 'at-z', variable: 'atZ' },
+        { id: 'up-x', variable: 'upX' },
+        { id: 'up-y', variable: 'upY' },
+        { id: 'up-z', variable: 'upZ' }
+    ];
+    
+    cameraControls.forEach(control => {
+        const slider = document.getElementById(control.id);
+        const span = document.getElementById(control.id + '-value');
+        if (slider && span) {
+            slider.addEventListener('input', () => {
+                const value = parseFloat(slider.value);
+                if (control.variable === 'eyeX') eyeX = value;
+                else if (control.variable === 'eyeY') eyeY = value;
+                else if (control.variable === 'eyeZ') eyeZ = value;
+                else if (control.variable === 'atX') atX = value;
+                else if (control.variable === 'atY') atY = value;
+                else if (control.variable === 'atZ') atZ = value;
+                else if (control.variable === 'upX') upX = value;
+                else if (control.variable === 'upY') upY = value;
+                else if (control.variable === 'upZ') upZ = value;
+                
+                span.textContent = value.toFixed(1);
+            });
+        }
+    });
+    
     document.getElementById('animate-btn').onclick = () => {
         isAnimating = !isAnimating;
         animationTime = 0;
-        document.getElementById('animate-btn').textContent = isAnimating ? 'Stop Animasi' : 'Mulai Animasi';
+        document.getElementById('animate-btn').textContent = isAnimating ? 'Stop Animation' : 'Start Animation';
     };
     document.getElementById('animation-preset').onchange = (e) => animationPreset = e.target.value;
     const sliders = ['scale', 'position-x', 'position-y', 'position-z', 'rotation-x', 'rotation-y', 'rotation-z'];
@@ -497,84 +715,19 @@ function setupEventListeners() {
         }
     });
 
-    // Kontrol rotasi dengan mouse dan touch pada canvas
-    const cvs = canvas;
-    if (cvs) {
-        cvs.style.cursor = 'grab';
-        
-        // Mouse events
-        cvs.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return; // hanya tombol kiri
-            isDragging = true;
-            lastMouseX = e.clientX;
-            lastMouseY = e.clientY;
-            cvs.style.cursor = 'grabbing';
-            e.preventDefault();
-        });
-        
-        window.addEventListener('mousemove', (e) => {
-            if (!isDragging) return;
-            const dx = e.clientX - lastMouseX;
-            const dy = e.clientY - lastMouseY;
-            lastMouseX = e.clientX;
-            lastMouseY = e.clientY;
-            mouseRotY += dx * mouseSensitivity; // yaw (kiri/kanan)
-            mouseRotX += dy * mouseSensitivity; // pitch (atas/bawah)
-            mouseRotX = Math.max(-89, Math.min(89, mouseRotX));
-        });
-        
-        const endDrag = () => { 
-            if (isDragging) { 
-                isDragging = false; 
-                cvs.style.cursor = 'grab'; 
-            } 
-        };
-        
-        window.addEventListener('mouseup', endDrag);
-        cvs.addEventListener('mouseleave', endDrag);
-        
-        // Touch events for mobile
-        cvs.addEventListener('touchstart', (e) => {
-            if (e.touches.length === 1) {
-                isDragging = true;
-                const touch = e.touches[0];
-                lastMouseX = touch.clientX;
-                lastMouseY = touch.clientY;
-                e.preventDefault();
-            }
-        });
-        
-        cvs.addEventListener('touchmove', (e) => {
-            if (!isDragging || e.touches.length !== 1) return;
-            const touch = e.touches[0];
-            const dx = touch.clientX - lastMouseX;
-            const dy = touch.clientY - lastMouseY;
-            lastMouseX = touch.clientX;
-            lastMouseY = touch.clientY;
-            mouseRotY += dx * mouseSensitivity * 0.8;
-            mouseRotX += dy * mouseSensitivity * 0.8;
-            mouseRotX = Math.max(-89, Math.min(89, mouseRotX));
-            e.preventDefault();
-        });
-        
-        cvs.addEventListener('touchend', (e) => {
-            endDrag();
-            e.preventDefault();
-        });
-        
-        cvs.addEventListener('touchcancel', (e) => {
-            endDrag();
-            e.preventDefault();
-        });
-        
-        // Nonaktifkan menu konteks saat klik kanan di canvas
-        cvs.addEventListener('contextmenu', (e) => e.preventDefault());
-        
-        // Prevent scrolling when touching the canvas
-        cvs.addEventListener('touchstart', (e) => e.preventDefault(), { passive: false });
-        cvs.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
-    }
-    
+    // Initialize camera control values
+    const cameraSliders = ['eye-x', 'eye-y', 'eye-z', 'at-x', 'at-y', 'at-z', 'up-x', 'up-y', 'up-z'];
+    cameraSliders.forEach(id => {
+        const slider = document.getElementById(id);
+        const span = document.getElementById(id + '-value');
+        if (slider && span) {
+            slider.addEventListener('input', () => {
+                const value = parseFloat(slider.value);
+                span.textContent = value.toFixed(1);
+            });
+        }
+    });
+
     // Setup responsive canvas
     setupResponsiveCanvas();
 }
@@ -602,8 +755,7 @@ function setupResponsiveCanvas() {
         gl.viewport(0, 0, canvas.width, canvas.height);
         
         // Update projection matrix with new aspect ratio
-        projectionMatrix = perspective(50.0, canvas.width / canvas.height, 0.1, 100.0);
-        gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
+        updateProjectionMatrix();
     }
     
     // Initial resize
@@ -616,4 +768,132 @@ function setupResponsiveCanvas() {
     window.addEventListener('orientationchange', function() {
         setTimeout(resizeCanvas, 100);
     });
+}
+
+// Photo Carousel Functionality
+class PhotoCarousel {
+    constructor() {
+        this.currentIndex = 0;
+        this.images = document.querySelectorAll('.carousel-image');
+        this.indicators = document.querySelectorAll('.indicator');
+        this.prevBtn = document.getElementById('prev-btn');
+        this.nextBtn = document.getElementById('next-btn');
+        this.photoCounter = document.getElementById('current-photo');
+        this.totalImages = this.images.length;
+        
+        this.init();
+    }
+    
+    init() {
+        // Add event listeners
+        this.prevBtn.addEventListener('click', () => this.previousImage());
+        this.nextBtn.addEventListener('click', () => this.nextImage());
+        
+        // Add indicator click handlers
+        this.indicators.forEach((indicator, index) => {
+            indicator.addEventListener('click', () => this.goToImage(index));
+        });
+        
+        // Add keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') {
+                this.previousImage();
+            } else if (e.key === 'ArrowRight') {
+                this.nextImage();
+            }
+        });
+        
+        // Add touch/swipe support
+        this.addTouchSupport();
+        
+        // Auto-play (optional - uncomment if needed)
+        // this.startAutoPlay();
+    }
+    
+    nextImage() {
+        this.currentIndex = (this.currentIndex + 1) % this.totalImages;
+        this.updateCarousel();
+    }
+    
+    previousImage() {
+        this.currentIndex = (this.currentIndex - 1 + this.totalImages) % this.totalImages;
+        this.updateCarousel();
+    }
+    
+    goToImage(index) {
+        this.currentIndex = index;
+        this.updateCarousel();
+    }
+    
+    updateCarousel() {
+        // Update images
+        this.images.forEach((img, index) => {
+            img.classList.toggle('active', index === this.currentIndex);
+        });
+        
+        // Update indicators
+        this.indicators.forEach((indicator, index) => {
+            indicator.classList.toggle('active', index === this.currentIndex);
+        });
+        
+        // Update counter
+        this.photoCounter.textContent = this.currentIndex + 1;
+    }
+    
+    addTouchSupport() {
+        const container = document.querySelector('.carousel-container');
+        let startX = 0;
+        let startY = 0;
+        let threshold = 50; // minimum distance for a swipe
+        
+        container.addEventListener('touchstart', (e) => {
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+        }, { passive: true });
+        
+        container.addEventListener('touchend', (e) => {
+            if (!startX || !startY) return;
+            
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            
+            const deltaX = startX - endX;
+            const deltaY = startY - endY;
+            
+            // Check if horizontal swipe is longer than vertical
+            if (Math.abs(deltaX) > Math.abs(deltaY)) {
+                if (Math.abs(deltaX) > threshold) {
+                    if (deltaX > 0) {
+                        this.nextImage(); // Swipe left - next image
+                    } else {
+                        this.previousImage(); // Swipe right - previous image
+                    }
+                }
+            }
+            
+            // Reset values
+            startX = 0;
+            startY = 0;
+        }, { passive: true });
+    }
+    
+    startAutoPlay() {
+        setInterval(() => {
+            this.nextImage();
+        }, 5000); // Change image every 5 seconds
+    }
+}
+
+// Initialize carousel when DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    new PhotoCarousel();
+});
+
+// Also initialize if DOM is already loaded
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+        new PhotoCarousel();
+    });
+} else {
+    new PhotoCarousel();
 }
