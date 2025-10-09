@@ -50,22 +50,6 @@
                         <option value="orthogonal">Orthogonal</option>
                     </select>
                 </div>
-                <h4>Perspective Settings:</h4>
-                <div class="control-row">
-                    <label for="fov">Field of View:</label>
-                    <input type="range" id="fov" min="10" max="120" step="1" value="50">
-                    <span id="fov-value">50°</span>
-                </div>
-                <div class="control-row">
-                    <label for="near-plane">Near Plane:</label>
-                    <input type="range" id="near-plane" min="0.1" max="2" step="0.1" value="0.1">
-                    <span id="near-plane-value">0.1</span>
-                </div>
-                <div class="control-row">
-                    <label for="far-plane">Far Plane:</label>
-                    <input type="range" id="far-plane" min="10" max="200" step="5" value="100">
-                    <span id="far-plane-value">100</span>
-                </div>
                 <h4>Orthogonal Settings:</h4>
                 <div class="control-row">
                     <label for="ortho-left">Left:</label>
@@ -152,11 +136,63 @@
             </div>
 
             <div class="control-group">
+                <h3>Lighting Control</h3>
+                <div class="control-row">
+                    <label for="enable-lighting">Enable Lighting:</label>
+                    <input type="checkbox" id="enable-lighting" checked>
+                </div>
+                
+                <h4>Phong Lighting Components:</h4>
+                <div class="control-row">
+                    <label for="ambient-strength">Ambient Strength:</label>
+                    <input type="range" id="ambient-strength" min="0" max="1" step="0.01" value="0.4">
+                    <span id="ambient-strength-value">0.40</span>
+                </div>
+                <div class="control-row">
+                    <label for="diffuse-strength">Diffuse Strength:</label>
+                    <input type="range" id="diffuse-strength" min="0" max="3" step="0.01" value="2.0">
+                    <span id="diffuse-strength-value">2.00</span>
+                </div>
+                <div class="control-row">
+                    <label for="specular-strength">Specular Strength:</label>
+                    <input type="range" id="specular-strength" min="0" max="5" step="0.01" value="2.5">
+                    <span id="specular-strength-value">2.50</span>
+                </div>
+                
+                <h4>Light Color & Intensity:</h4>
+                <div class="control-row">
+                    <label for="light-color">Light Color:</label>
+                    <input type="color" id="light-color" value="#ffffff">
+                </div>
+                <div class="control-row">
+                    <label for="ambient-color">Ambient Color:</label>
+                    <input type="color" id="ambient-color" value="#666666">
+                </div>
+                
+                <h4>Spotlight Position:</h4>
+                <div class="control-row">
+                    <label for="light-pos-x">Position X:</label>
+                    <input type="range" id="light-pos-x" min="-10" max="10" step="0.1" value="-5.0">
+                    <span id="light-pos-x-value">-5.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="light-pos-y">Position Y:</label>
+                    <input type="range" id="light-pos-y" min="-10" max="10" step="0.1" value="5.0">
+                    <span id="light-pos-y-value">5.0</span>
+                </div>
+                <div class="control-row">
+                    <label for="light-pos-z">Position Z:</label>
+                    <input type="range" id="light-pos-z" min="-10" max="10" step="0.1" value="-1.0">
+                    <span id="light-pos-z-value">-1.0</span>
+                </div>
+            </div>
+
+            <div class="control-group">
                 <h3>Transform Controls</h3>
                 <div class="control-row">
                     <label for="scale">Scale:</label>
-                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="1">
-                    <span id="scale-value">1.00</span>
+                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="3">
+                    <span id="scale-value">3.00</span>
                 </div>
                 <h4>Position:</h4>
                 <div class="control-row">
@@ -218,24 +254,81 @@
     #version 300 es
     in vec4 aPosition;
     in vec4 aColor;
+    in vec3 aNormal;
+    in float aShininess;
+    
     out vec4 vColor;
+    out vec3 vNormal;
+    out vec3 vPosition;
+    out float vShininess;
 
     uniform mat4 modelViewMatrix;
     uniform mat4 projectionMatrix;
+    uniform mat3 normalMatrix;
 
     void main() {
+        vec4 worldPosition = modelViewMatrix * aPosition;
+        vPosition = worldPosition.xyz;
+        vNormal = normalize(normalMatrix * aNormal);
         vColor = aColor;
-        gl_Position = projectionMatrix * modelViewMatrix * aPosition;
+        vShininess = aShininess;
+        gl_Position = projectionMatrix * worldPosition;
     }
     </script>
 
     <script id="fragment-shader" type="x-shader/x-fragment">
     #version 300 es
     precision mediump float;
+    
     in vec4 vColor;
+    in vec3 vNormal;
+    in vec3 vPosition;
+    in float vShininess;
+    
     out vec4 fColor;
+    
+    // Lighting uniforms
+    uniform bool enableLighting;
+    uniform vec3 lightPosition;
+    uniform vec3 lightColor;
+    uniform vec3 ambientLight;
+    uniform vec3 eyePosition;
+    uniform float ambientStrength;
+    uniform float diffuseStrength;
+    uniform float specularStrength;
+    
     void main() {
-        fColor = vColor;
+        if (!enableLighting) {
+            fColor = vColor;
+            return;
+        }
+        
+        vec3 normal = normalize(vNormal);
+        vec3 materialColor = vColor.rgb;
+        
+        vec3 ambient = ambientStrength * ambientLight * materialColor;
+        
+        vec3 lightDir = normalize(lightPosition - vPosition);
+        float distance = length(lightPosition - vPosition);
+        
+        float attenuation = 1.0 / (1.0 + 0.05 * distance + 0.005 * distance * distance);
+        
+        float distanceToTarget = length(vPosition);
+        float spotRadius = 1.5;
+        float spotFalloff = 1.0 - smoothstep(0.0, spotRadius, distanceToTarget);
+        spotFalloff = max(spotFalloff, 0.2);
+        attenuation *= spotFalloff;
+        
+        float diff = max(dot(normal, lightDir), 0.0);
+        vec3 diffuse = diffuseStrength * diff * lightColor * materialColor;
+        
+        vec3 viewDir = normalize(eyePosition - vPosition);
+        vec3 halfwayDir = normalize(lightDir + viewDir);
+        float spec = pow(max(dot(normal, halfwayDir), 0.0), vShininess);
+        vec3 specular = specularStrength * spec * lightColor;
+        
+        vec3 result = ambient + (diffuse + specular) * attenuation;
+        fColor = vec4(result, vColor.a);
     }
     </script>
 
