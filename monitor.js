@@ -88,7 +88,7 @@ function createMonitor() {
     const baseColor = vec4(0.18, 0.18, 0.18, 1.0);
 
     const screenShininess = 80.0;
-    const bodyShininess = 15.0;
+    const bodyShininess = 5.0;
 
     const screenWidth = 0.7
     const screenHeight = 0.42
