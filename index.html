@@ -142,21 +142,27 @@
                     <input type="checkbox" id="enable-lighting" checked>
                 </div>
                 
+                <h4>Texture Settings:</h4>
+                <div class="control-row">
+                    <label for="use-textures">Enable Textures:</label>
+                    <input type="checkbox" id="use-textures" checked>
+                </div>
+                
                 <h4>Phong Lighting Components:</h4>
                 <div class="control-row">
                     <label for="ambient-strength">Ambient Strength:</label>
-                    <input type="range" id="ambient-strength" min="0" max="1" step="0.01" value="0.4">
-                    <span id="ambient-strength-value">0.40</span>
+                    <input type="range" id="ambient-strength" min="0" max="1" step="0.01" value="0.25">
+                    <span id="ambient-strength-value">0.25</span>
                 </div>
                 <div class="control-row">
                     <label for="diffuse-strength">Diffuse Strength:</label>
-                    <input type="range" id="diffuse-strength" min="0" max="3" step="0.01" value="2.0">
-                    <span id="diffuse-strength-value">2.00</span>
+                    <input type="range" id="diffuse-strength" min="0" max="3" step="0.01" value="1.0">
+                    <span id="diffuse-strength-value">1.00</span>
                 </div>
                 <div class="control-row">
                     <label for="specular-strength">Specular Strength:</label>
-                    <input type="range" id="specular-strength" min="0" max="5" step="0.01" value="2.5">
-                    <span id="specular-strength-value">2.50</span>
+                    <input type="range" id="specular-strength" min="0" max="5" step="0.01" value="1.2">
+                    <span id="specular-strength-value">1.20</span>
                 </div>
                 
                 <h4>Light Color & Intensity:</h4>
@@ -172,18 +178,18 @@
                 <h4>Spotlight Position:</h4>
                 <div class="control-row">
                     <label for="light-pos-x">Position X:</label>
-                    <input type="range" id="light-pos-x" min="-10" max="10" step="0.1" value="-5.0">
+                    <input type="range" id="light-pos-x" min="-15" max="15" step="0.1" value="-5.0">
                     <span id="light-pos-x-value">-5.0</span>
                 </div>
                 <div class="control-row">
                     <label for="light-pos-y">Position Y:</label>
-                    <input type="range" id="light-pos-y" min="-10" max="10" step="0.1" value="5.0">
+                    <input type="range" id="light-pos-y" min="-15" max="15" step="0.1" value="5.0">
                     <span id="light-pos-y-value">5.0</span>
                 </div>
                 <div class="control-row">
                     <label for="light-pos-z">Position Z:</label>
-                    <input type="range" id="light-pos-z" min="-10" max="10" step="0.1" value="-1.0">
-                    <span id="light-pos-z-value">-1.0</span>
+                    <input type="range" id="light-pos-z" min="-15" max="15" step="0.1" value="8.0">
+                    <span id="light-pos-z-value">8.0</span>
                 </div>
             </div>
 
@@ -244,7 +250,14 @@
                         <option value="spin">Spin</option>
                         <option value="bounce">Bounce</option>
                         <option value="pulse">Pulse</option>
+                        <option value="tilt">Tilt</option>
                     </select>
+                </div>
+                <h4>Tilt</h4>
+                <div class="control-row">
+                    <label for="tilt-angle">Tilt Angle (deg):</label>
+                    <input type="range" id="tilt-angle" min="-10" max="10" step="1" value="0">
+                    <span id="tilt-angle-value">0</span>
                 </div>
             </div>
         </div>
@@ -256,11 +269,13 @@
     in vec4 aColor;
     in vec3 aNormal;
     in float aShininess;
+    in vec2 aTexCoord;
     
     out vec4 vColor;
     out vec3 vNormal;
     out vec3 vPosition;
     out float vShininess;
+    out vec2 vTexCoord;
 
     uniform mat4 modelViewMatrix;
     uniform mat4 projectionMatrix;
@@ -272,6 +287,7 @@
         vNormal = normalize(normalMatrix * aNormal);
         vColor = aColor;
         vShininess = aShininess;
+        vTexCoord = aTexCoord;
         gl_Position = projectionMatrix * worldPosition;
     }
     </script>
@@ -284,6 +300,7 @@
     in vec3 vNormal;
     in vec3 vPosition;
     in float vShininess;
+    in vec2 vTexCoord;
     
     out vec4 fColor;
     
@@ -295,10 +312,27 @@
     uniform float ambientStrength;
     uniform float diffuseStrength;
     uniform float specularStrength;
+    uniform bool useTextures;
+    uniform sampler2D checkerboardTexture;
+    uniform sampler2D wallpaperTexture;
     
     void main() {
+        vec3 materialColor = vColor.rgb;
+        
+        if (useTextures) {
+            if (vShininess > 15.0) {
+                // Screen - use wallpaper texture
+                vec3 texColor = texture(wallpaperTexture, vTexCoord).rgb;
+                materialColor = texColor;
+            } else {
+                // Body parts - use checkerboard texture
+                vec3 texColor = texture(checkerboardTexture, vTexCoord).rgb;
+                materialColor = mix(materialColor, texColor, 0.8);
+            }
+        }
+        
         if (!enableLighting) {
-            fColor = vColor;
+            fColor = vec4(materialColor, 1.0);
             return;
         }
         
@@ -306,8 +340,6 @@
         vec3 L = normalize(lightPosition - vPosition);
         vec3 E = normalize(eyePosition - vPosition);
         vec3 H = normalize(L + E);
-        
-        vec3 materialColor = vColor.rgb;
         
         vec4 ambient = vec4(ambientStrength * ambientLight * materialColor, 1.0);
         

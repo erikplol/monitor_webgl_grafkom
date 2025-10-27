@@ -1,8 +1,16 @@
 "use strict";
 let canvas, gl, program;
 let modelViewMatrix, projectionMatrix, modelViewMatrixLoc, projectionMatrixLoc;
-let vertices = [], vertexColors = [], indices = [], normals = [], shininessValues = [];
+let vertices = [], vertexColors = [], indices = [], normals = [], shininessValues = [], texCoords = [];
+// Draw partitioning for hierarchical rendering
+let screenIndexCount = 0; // number of indices belonging to the tilting screen assembly (from 0)
+let tiltAngle = 0; // degrees
+let screenPivotX = 0, screenPivotY = 0, screenPivotZ = 0; // pivot for tilt
 let isAnimating = false, animationPreset = 'spin', animationTime = 0;
+
+// Texture variables
+let checkerboardTexture, wallpaperTexture;
+let useTextures = true;
 
 // Projection control variables
 let projectionMode = 'perspective';
@@ -29,15 +37,53 @@ function initializeSphericalCoords() {
 
 // Lighting variables
 let enableLighting = true;
-let lightPosition = vec3(2.0, 2.0, 3.0);
-let lightColor = vec3(2.0, 2.0, 2.0);
+let lightPosition = vec3(-5.0, 5.0, 8.0);
+let lightColor = vec3(0.5, 0.5, 0.5);
 let ambientLight = vec3(0.4, 0.4, 0.4);
-let ambientStrength = 0.4;
-let diffuseStrength = 2.0;
-let specularStrength = 2.5;
+let ambientStrength = 0.25;
+let diffuseStrength = 1.0;
+let specularStrength = 1.2;
 
 // Uniform locations for lighting
 let lightingUniforms = {};
+
+function loadTexture(gl, url, flipY = false) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    
+    const level = 0;
+    const internalFormat = gl.RGBA;
+    const width = 1;
+    const height = 1;
+    const border = 0;
+    const srcFormat = gl.RGBA;
+    const srcType = gl.UNSIGNED_BYTE;
+    const pixel = new Uint8Array([0, 0, 255, 255]);
+    gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, width, height, border, srcFormat, srcType, pixel);
+    
+    const image = new Image();
+    image.onload = function() {
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, flipY);
+        gl.texImage2D(gl.TEXTURE_2D, level, internalFormat, srcFormat, srcType, image);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+        
+        if (isPowerOf2(image.width) && isPowerOf2(image.height)) {
+            gl.generateMipmap(gl.TEXTURE_2D);
+        } else {
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+    };
+    image.src = url;
+    
+    return texture;
+}
+
+function isPowerOf2(value) {
+    return (value & (value - 1)) == 0;
+}
 
 init();
 
@@ -55,6 +101,11 @@ function init() {
     createMonitor();
     setupBuffers();
 
+    // Load textures
+    checkerboardTexture = loadTexture(gl, 'checkerboard.jpg', false);
+    // Flip only the wallpaper so it appears right-side-up on the screen
+    wallpaperTexture = loadTexture(gl, 'wallpaper.jpg', true);
+
     modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
     projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
     
@@ -68,7 +119,10 @@ function init() {
         ambientStrength: gl.getUniformLocation(program, "ambientStrength"),
         diffuseStrength: gl.getUniformLocation(program, "diffuseStrength"),
         specularStrength: gl.getUniformLocation(program, "specularStrength"),
-        normalMatrix: gl.getUniformLocation(program, "normalMatrix")
+        normalMatrix: gl.getUniformLocation(program, "normalMatrix"),
+        useTextures: gl.getUniformLocation(program, "useTextures"),
+        checkerboardTexture: gl.getUniformLocation(program, "checkerboardTexture"),
+        wallpaperTexture: gl.getUniformLocation(program, "wallpaperTexture")
     };
     
     initializeSphericalCoords();
@@ -87,7 +141,7 @@ function createMonitor() {
     const standColor = vec4(0.18, 0.18, 0.18, 1.0);
     const baseColor = vec4(0.18, 0.18, 0.18, 1.0);
 
-    const screenShininess = 80.0;
+    const screenShininess = 20.0;
     const bodyShininess = 5.0;
 
     const screenWidth = 0.7
@@ -169,6 +223,13 @@ function createMonitor() {
     const standHeight = 0.2
     const standYPos = yOffset - (screenHeight / 2) - (standHeight / 2);
 
+    // Mark all geometry added so far as part of the tilting screen assembly
+    screenIndexCount = indices.length;
+    // Define the tilt pivot approximately at the top of the stand where screen mounts
+    screenPivotX = 0;
+    screenPivotY = standYPos + (standHeight / 2);
+    screenPivotZ = 0;
+
     createBoxWithHoleAndShininess(
         0.2, 
         0.35, 
@@ -220,14 +281,24 @@ function createCubeWithShininess(width, height, depth, color, cx, cy, cz, shinin
         [vec3(-w + cx, -h + cy, -d + cz), vec3(w + cx, -h + cy, -d + cz), vec3(w + cx, -h + cy, d + cz), vec3(-w + cx, -h + cy, d + cz)]
     ];
     
+    const faceTexCoords = [
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // front
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // back
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // right
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // left
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // top
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)]  // bottom
+    ];
+    
     faces.forEach((faceVertices, faceIndex) => {
         const startIndex = vertices.length;
         
-        faceVertices.forEach(vertex => {
+        faceVertices.forEach((vertex, vertexIndex) => {
             vertices.push(vertex);
             vertexColors.push(color);
             normals.push(faceNormals[faceIndex]);
             shininessValues.push(shininess);
+            texCoords.push(faceTexCoords[faceIndex][vertexIndex]);
         });
         
         indices.push(startIndex, startIndex + 1, startIndex + 2);
@@ -247,6 +318,10 @@ function createCubeFaceWithShininess(width, height, depth, color, cx, cy, cz, sh
         vec3(-w + cx,  h + cy, d + cz),
     ];
     
+    const texCoordsFace = [
+        vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)
+    ];
+    
     const faceNormal = vec3(0, 0, 1);
     
     const startIndex = vertices.length;
@@ -255,6 +330,7 @@ function createCubeFaceWithShininess(width, height, depth, color, cx, cy, cz, sh
         vertexColors.push(color);
         normals.push(faceNormal);
         shininessValues.push(shininess);
+        texCoords.push(texCoordsFace[i]);
     }
 
     const faceIndices = [0, 1, 2, 0, 2, 3];
@@ -271,6 +347,7 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
     const startIndex = vertices.length;
     const backVertices = [];
     const backNormals = [];
+    const backTexCoords = [];
     
     for (let j = 0; j <= segments; j++) {
         for (let i = 0; i <= segments; i++) {
@@ -282,6 +359,7 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
             const z = cz - (maxDepth * Math.cos((u - 0.5) * Math.PI));
             
             backVertices.push(vec3(x, y, z));
+            backTexCoords.push(vec2(u, v));
             
             const dz_du = maxDepth * Math.sin((u - 0.5) * Math.PI) * Math.PI;
             const tangentU = vec3(width, 0, dz_du);
@@ -296,6 +374,7 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
         vertexColors.push(color);
         normals.push(backNormals[i]);
         shininessValues.push(shininess);
+        texCoords.push(backTexCoords[i]);
     }
 
     for (let j = 0; j < segments; j++) {
@@ -311,12 +390,16 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
         vec3(cx-w, cy-h, cz), vec3(cx+w, cy-h, cz),
         vec3(cx+w, cy+h, cz), vec3(cx-w, cy+h, cz)
     ];
+    const frontTexCoords = [
+        vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)
+    ];
     const frontStartIndex = vertices.length;
     vertices.push(...frontBezel);
     for(let i=0; i<4; i++) {
         vertexColors.push(color);
         normals.push(vec3(0, 0, 1));
         shininessValues.push(shininess);
+        texCoords.push(frontTexCoords[i]);
     }
 
     const topFrontStart = vertices.length;
@@ -329,6 +412,7 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
         vertexColors.push(color);
         normals.push(vec3(0, 1, 0));
         shininessValues.push(shininess);
+        texCoords.push(vec2(u, 0));
     }
     const topBackRowStart = startIndex + segments * (segments + 1);
     for (let i = 0; i < segments; i++) {
@@ -350,6 +434,7 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
         vertexColors.push(color);
         normals.push(vec3(0, -1, 0));
         shininessValues.push(shininess);
+        texCoords.push(vec2(u, 1));
     }
     const bottomBackRowStart = startIndex + 0;
     for (let i = 0; i < segments; i++) {
@@ -396,7 +481,7 @@ function createBoxWithHoleAndShininess(width, height, depth, holeRadius, colorOu
         backRays.push(vec3(rx, ry, -d));
     }
 
-    function pushVWithShininess(v3, color, normal) {
+    function pushVWithShininess(v3, color, normal, texCoord = vec2(0, 0)) {
         const v4 = vec4(v3[0], v3[1], v3[2], 1.0);
         const r4 = mult(R, v4);
         const rotatedNormal = mult(R, vec4(normal[0], normal[1], normal[2], 0.0));
@@ -404,16 +489,37 @@ function createBoxWithHoleAndShininess(width, height, depth, holeRadius, colorOu
         vertexColors.push(color);
         normals.push(vec3(rotatedNormal[0], rotatedNormal[1], rotatedNormal[2]));
         shininessValues.push(shininess);
+        texCoords.push(texCoord);
     }
 
     const baseFrontCircle = vertices.length;
-    for (let i = 0; i < segments; i++) pushVWithShininess(frontCircle[i], colorOuter, vec3(0, 0, 1));
+    for (let i = 0; i < segments; i++) {
+        const t = (i / segments) * 2 * Math.PI;
+        const u = (Math.cos(t) + 1) * 0.5;
+        const v = (Math.sin(t) + 1) * 0.5;
+        pushVWithShininess(frontCircle[i], colorOuter, vec3(0, 0, 1), vec2(u, v));
+    }
     const baseBackCircle = vertices.length;
-    for (let i = 0; i < segments; i++) pushVWithShininess(backCircle[i], colorOuter, vec3(0, 0, -1));
+    for (let i = 0; i < segments; i++) {
+        const t = (i / segments) * 2 * Math.PI;
+        const u = (Math.cos(t) + 1) * 0.5;
+        const v = (Math.sin(t) + 1) * 0.5;
+        pushVWithShininess(backCircle[i], colorOuter, vec3(0, 0, -1), vec2(u, v));
+    }
     const baseFrontRays = vertices.length;
-    for (let i = 0; i < segments; i++) pushVWithShininess(frontRays[i], colorOuter, vec3(0, 0, 1));
+    for (let i = 0; i < segments; i++) {
+        const t = (i / segments) * 2 * Math.PI;
+        const u = (Math.cos(t) + 1) * 0.5;
+        const v = (Math.sin(t) + 1) * 0.5;
+        pushVWithShininess(frontRays[i], colorOuter, vec3(0, 0, 1), vec2(u, v));
+    }
     const baseBackRays = vertices.length;
-    for (let i = 0; i < segments; i++) pushVWithShininess(backRays[i], colorOuter, vec3(0, 0, -1));
+    for (let i = 0; i < segments; i++) {
+        const t = (i / segments) * 2 * Math.PI;
+        const u = (Math.cos(t) + 1) * 0.5;
+        const v = (Math.sin(t) + 1) * 0.5;
+        pushVWithShininess(backRays[i], colorOuter, vec3(0, 0, -1), vec2(u, v));
+    }
 
     for (let i = 0; i < segments; i++) {
         const i1 = (i + 1) % segments;
@@ -439,13 +545,17 @@ function createBoxWithHoleAndShininess(width, height, depth, holeRadius, colorOu
     for (let i = 0; i < segments; i++) {
         const t = (i / segments) * 2 * Math.PI;
         const inwardNormal = vec3(-Math.cos(t), -Math.sin(t), 0);
-        pushVWithShininess(frontCircle[i], colorInner, inwardNormal);
+        const u = (Math.cos(t) + 1) * 0.5;
+        const v = (Math.sin(t) + 1) * 0.5;
+        pushVWithShininess(frontCircle[i], colorInner, inwardNormal, vec2(u, v));
     }
     const baseInnerBack = vertices.length;
     for (let i = 0; i < segments; i++) {
         const t = (i / segments) * 2 * Math.PI;
         const inwardNormal = vec3(-Math.cos(t), -Math.sin(t), 0);
-        pushVWithShininess(backCircle[i], colorInner, inwardNormal);
+        const u = (Math.cos(t) + 1) * 0.5;
+        const v = (Math.sin(t) + 1) * 0.5;
+        pushVWithShininess(backCircle[i], colorInner, inwardNormal, vec2(u, v));
     }
     for (let i = 0; i < segments; i++) {
         const i1 = (i + 1) % segments;
@@ -459,10 +569,11 @@ function createBoxWithHoleAndShininess(width, height, depth, holeRadius, colorOu
 
     function addQuadWithShininess(v0, v1, v2, v3, color, normal) {
         const s = vertices.length;
-        pushVWithShininess(v0, color, normal); 
-        pushVWithShininess(v1, color, normal); 
-        pushVWithShininess(v2, color, normal); 
-        pushVWithShininess(v3, color, normal);
+        const quadTexCoords = [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)];
+        pushVWithShininess(v0, color, normal, quadTexCoords[0]); 
+        pushVWithShininess(v1, color, normal, quadTexCoords[1]); 
+        pushVWithShininess(v2, color, normal, quadTexCoords[2]); 
+        pushVWithShininess(v3, color, normal, quadTexCoords[3]);
         indices.push(s + 0, s + 1, s + 2);
         indices.push(s + 0, s + 2, s + 3);
     }
@@ -505,6 +616,13 @@ function setupBuffers() {
     const shininessLoc = gl.getAttribLocation(program, "aShininess");
     gl.vertexAttribPointer(shininessLoc, 1, gl.FLOAT, false, 0, 0);
     gl.enableVertexAttribArray(shininessLoc);
+    
+    const tBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, tBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, flatten(texCoords), gl.STATIC_DRAW);
+    const texCoordLoc = gl.getAttribLocation(program, "aTexCoord");
+    gl.vertexAttribPointer(texCoordLoc, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(texCoordLoc);
 }
 
 function render() {
@@ -528,6 +646,16 @@ function render() {
             scaleValue = 1.0 + 0.2 * Math.sin(animationTime * 5);
             get('scale').value = scaleValue.toFixed(2);
             get('scale-value').textContent = scaleValue.toFixed(2);
+        } else if (animationPreset === 'tilt') {
+            // oscillate tilt between -12 and +12 degrees
+            const t = 12 * Math.sin(animationTime * 2.0);
+            tiltAngle = t;
+            const tiltSlider = document.getElementById('tilt-angle');
+            const tiltSpan = document.getElementById('tilt-angle-value');
+            if (tiltSlider && tiltSpan) {
+                tiltSlider.value = tiltAngle.toFixed(0);
+                tiltSpan.textContent = tiltAngle.toFixed(0);
+            }
         }
     }
     
@@ -548,7 +676,7 @@ function render() {
     mvm = mult(mvm, rotate(rotX, vec3(1, 0, 0)));
     mvm = mult(mvm, scale(scaleValue, scaleValue, scaleValue));
     
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvm));
+    // We'll render in two passes (screen, then stand+base) with separate matrices
     
     gl.uniform1i(lightingUniforms.enableLighting, enableLighting);
     gl.uniform3fv(lightingUniforms.lightPosition, flatten(lightPosition));
@@ -559,21 +687,62 @@ function render() {
     gl.uniform1f(lightingUniforms.diffuseStrength, diffuseStrength);
     gl.uniform1f(lightingUniforms.specularStrength, specularStrength);
     
-    let normalMatrix = mat3();
-    let mvmInverse = inverse(mvm);
-    let mvmTranspose = transpose(mvmInverse);
-    normalMatrix = mat3(
-        mvmTranspose[0][0], mvmTranspose[0][1], mvmTranspose[0][2],
-        mvmTranspose[1][0], mvmTranspose[1][1], mvmTranspose[1][2],
-        mvmTranspose[2][0], mvmTranspose[2][1], mvmTranspose[2][2]
+    // Set texture uniforms
+    gl.uniform1i(lightingUniforms.useTextures, useTextures);
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, checkerboardTexture);
+    gl.uniform1i(lightingUniforms.checkerboardTexture, 0);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, wallpaperTexture);
+    gl.uniform1i(lightingUniforms.wallpaperTexture, 1);
+    
+    const wireframe = get('wireframe-mode').checked;
+
+    // 1) Render tilting screen group with extra rotation about pivot
+    let mvmScreen = mvm;
+    // Apply tilt about X axis around the pivot in model space
+    mvmScreen = mult(mvmScreen, translate(screenPivotX, screenPivotY, screenPivotZ));
+    mvmScreen = mult(mvmScreen, rotate(tiltAngle, vec3(1, 0, 0)));
+    mvmScreen = mult(mvmScreen, translate(-screenPivotX, -screenPivotY, -screenPivotZ));
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmScreen));
+    let invScr = inverse(mvmScreen);
+    let trsScr = transpose(invScr);
+    let normalMatrix = mat3(
+        trsScr[0][0], trsScr[0][1], trsScr[0][2],
+        trsScr[1][0], trsScr[1][1], trsScr[1][2],
+        trsScr[2][0], trsScr[2][1], trsScr[2][2]
     );
     gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-    
-    if (get('wireframe-mode').checked) {
-        for (let i = 0; i < indices.length; i += 3) 
-            gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-    } else {
-        gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT, 0);
+    if (screenIndexCount > 0) {
+        if (wireframe) {
+            for (let i = 0; i < screenIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, screenIndexCount, gl.UNSIGNED_SHORT, 0);
+        }
+    }
+
+    // 2) Render the rest (stand + base) without tilt using base matrix
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvm));
+    let invBase = inverse(mvm);
+    let trsBase = transpose(invBase);
+    normalMatrix = mat3(
+        trsBase[0][0], trsBase[0][1], trsBase[0][2],
+        trsBase[1][0], trsBase[1][1], trsBase[1][2],
+        trsBase[2][0], trsBase[2][1], trsBase[2][2]
+    );
+    gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+    const restIndexStart = screenIndexCount;
+    const restIndexCount = indices.length - screenIndexCount;
+    if (restIndexCount > 0) {
+        if (wireframe) {
+            for (let i = restIndexStart; i < indices.length; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, restIndexCount, gl.UNSIGNED_SHORT, restIndexStart * 2);
+        }
     }
     
     requestAnimationFrame(render);
@@ -773,6 +942,16 @@ function setupEventListeners() {
         }
     });
 
+    // Tilt slider wiring
+    const tiltSlider = document.getElementById('tilt-angle');
+    const tiltSpan = document.getElementById('tilt-angle-value');
+    if (tiltSlider && tiltSpan) {
+        tiltSlider.addEventListener('input', () => {
+            tiltAngle = parseFloat(tiltSlider.value);
+            tiltSpan.textContent = tiltAngle.toFixed(0);
+        });
+    }
+
     const cameraSliders = ['eye-x', 'eye-y', 'eye-z', 'at-x', 'at-y', 'at-z', 'up-x', 'up-y', 'up-z'];
     cameraSliders.forEach(id => {
         const slider = document.getElementById(id);
@@ -789,6 +968,13 @@ function setupEventListeners() {
     if (enableLightingCheckbox) {
         enableLightingCheckbox.addEventListener('change', (e) => {
             enableLighting = e.target.checked;
+        });
+    }
+
+    const useTexturesCheckbox = document.getElementById('use-textures');
+    if (useTexturesCheckbox) {
+        useTexturesCheckbox.addEventListener('change', (e) => {
+            useTextures = e.target.checked;
         });
     }
 
