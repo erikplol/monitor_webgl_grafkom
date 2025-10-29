@@ -16,9 +16,9 @@
                 Muhammad Baihaqi Dawanis/5025231177
             </p> 
         </div>
-
+        
         <div class="photo-carousel">
-            <h3>Perbandingan Foto</h3>
+            <h3>Perbandingan Foto & Hierarchical Tree*</h3>
             <div class="carousel-container">
                 <button class="carousel-btn prev-btn" id="prev-btn">❮</button>
                 <div class="carousel-images">
@@ -26,6 +26,7 @@
                     <img src="foto/foto2.jpeg" alt="Foto 2" class="carousel-image">
                     <img src="foto/foto3.jpeg" alt="Foto 3" class="carousel-image">
                     <img src="foto/foto4.jpeg" alt="Foto 4" class="carousel-image">
+                    <img src="image.png" alt="Foto 5" class="carousel-image">
                 </div>
                 <button class="carousel-btn next-btn" id="next-btn">❯</button>
             </div>
@@ -204,43 +205,52 @@
                 </div>
                 
                 <h4>Monitor Transform (Relative to Table):</h4>
-                <div class="control-row">
+                 <div class="control-row">
                     <label for="scale">Scale:</label>
-                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="3">
-                    <span id="scale-value">3.00</span>
+                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="3" disabled> <span id="scale-value">3.00</span>
                 </div>
                 <h4>Position:</h4>
                 <div class="control-row">
                     <label for="position-x">X:</label>
-                    <input type="range" id="position-x" min="-2" max="2" step="0.01" value="0">
+                    <input type="range" id="position-x" min="-0.8" max="0.8" step="0.01" value="0"> 
                     <span id="position-x-value">0.00</span>
                 </div>
                 <div class="control-row">
                     <label for="position-y">Y:</label>
-                    <input type="range" id="position-y" min="-2" max="2" step="0.01" value="0">
+                    <input type="range" id="position-y" min="0" max="0.5" step="0.01" value="0"> 
                     <span id="position-y-value">0.00</span>
                 </div>
                 <div class="control-row">
                     <label for="position-z">Z:</label>
-                    <input type="range" id="position-z" min="-5" max="5" step="0.01" value="0">
+                    <input type="range" id="position-z" min="-0.4" max="0.4" step="0.01" value="0"> 
                     <span id="position-z-value">0.00</span>
                 </div>
                 <h4>Rotation:</h4>
                 <div class="control-row">
                     <label for="rotation-x">X:</label>
-                    <input type="range" id="rotation-x" min="0" max="360" step="1" value="20">
-                    <span id="rotation-x-value">20</span>
+                    <input type="range" id="rotation-x" min="0" max="360" step="1" value="0" disabled> <span id="rotation-x-value">0</span>
                 </div>
                 <div class="control-row">
                     <label for="rotation-y">Y:</label>
-                    <input type="range" id="rotation-y" min="0" max="360" step="1" value="30">
-                    <span id="rotation-y-value">30</span>
+                    <input type="range" id="rotation-y" min="0" max="360" step="1" value="10" disabled> <span id="rotation-y-value"></span>
                 </div>
                 <div class="control-row">
                     <label for="rotation-z">Z:</label>
-                    <input type="range" id="rotation-z" min="0" max="360" step="1" value="0">
-                    <span id="rotation-z-value">0</span>
+                    <input type="range" id="rotation-z" min="0" max="360" step="1" value="0" disabled> <span id="rotation-z-value">0</span>
                 </div>
+
+                <h4>Mouse Transform (Relative to Table):</h4>
+                <div class="control-row">
+                    <label for="mouse-pos-x">Mouse X:</label>
+                    <input type="range" id="mouse-pos-x" min="-0.9" max="0.9" step="0.01" value="0.5"> 
+                    <span id="mouse-pos-x-value">0.50</span>
+                </div>
+                <div class="control-row">
+                    <label for="mouse-pos-z">Mouse Z:</label>
+                    <input type="range" id="mouse-pos-z" min="-0.4" max="0.4" step="0.01" value="0.3"> 
+                    <span id="mouse-pos-z-value">0.30</span>
+                </div>
+
             </div>
 
             <div class="control-group">
@@ -261,6 +271,7 @@
                         <option value="pulse">Pulse</option>
                         <option value="tilt">Tilt</option>
                         <option value="slide_table">Slide Table</option>
+                        <option value="slide_mouse">Slide Mouse</option>
                     </select>
                 </div>
                 <h4>Tilt</h4>
@@ -339,10 +350,13 @@
                 vec3 texColor = texture(checkerboardTexture, vTexCoord).rgb;
                 // Beri warna meja (shininess rendah) agar tidak terlalu terpengaruh checkerboard
                 // Panel putih (shininess=3.0) tidak akan terlalu terpengaruh
+                 // Mouse (shininess=10) akan lebih terpengaruh
                 if(vShininess < 4.0) { 
                     materialColor = mix(materialColor, texColor, 0.4);
-                } else {
-                    materialColor = mix(materialColor, texColor, 0.8);
+                } else if (vShininess < 11.0) { // Mouse & Monitor Body
+                     materialColor = mix(materialColor, texColor, 0.8);
+                } else { // Parts lain (jika ada)
+                     materialColor = mix(materialColor, texColor, 0.6);
                 }
             }
         }
