@@ -2,8 +2,13 @@
 let canvas, gl, program;
 let modelViewMatrix, projectionMatrix, modelViewMatrixLoc, projectionMatrixLoc;
 let vertices = [], vertexColors = [], indices = [], normals = [], shininessValues = [], texCoords = [];
+
 // Draw partitioning for hierarchical rendering
-let screenIndexCount = 0; // number of indices belonging to the tilting screen assembly (from 0)
+let screenIndexCount = 0; // jumlah index untuk screen group (tilt)
+let monitorIndexCount = 0; // jumlah total index untuk *seluruh* monitor (screen + stand)
+let tableIndexCount = 0;   // jumlah index untuk meja
+let tablePosX = 0;         // Posisi X untuk meja (animasi geser)
+
 let tiltAngle = 0; // degrees
 let screenPivotX = 0, screenPivotY = 0, screenPivotZ = 0; // pivot for tilt
 let isAnimating = false, animationPreset = 'spin', animationTime = 0;
@@ -98,12 +103,22 @@ function init() {
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
 
+    // --- HIERARCHY LOADING ---
+    // 1. Buat Monitor (Screen + Stand)
     createMonitor();
+    // Catat jumlah total index untuk monitor
+    monitorIndexCount = indices.length; 
+    
+    // 2. Buat Meja
+    createTable();
+    // Index meja adalah sisanya
+    tableIndexCount = indices.length - monitorIndexCount;
+    // -------------------------
+
     setupBuffers();
 
     // Load textures
     checkerboardTexture = loadTexture(gl, 'checkerboard.jpg', false);
-    // Flip only the wallpaper so it appears right-side-up on the screen
     wallpaperTexture = loadTexture(gl, 'wallpaper.jpg', true);
 
     modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
@@ -134,6 +149,88 @@ function init() {
     
     render();
 }
+
+// --- FUNGSI MEJA DIPERBARUI (PANEL COKLAT MENGHADAP DEPAN) ---
+function createTable() {
+    
+    const darkWoodColor = vec4(0.3, 0.2, 0.15, 1.0); 
+    const whitePanelColor = vec4(0.95, 0.95, 0.95, 1.0);
+    const bodyShininess = 3.0;
+
+    // Dimensi Atas Meja
+    const tableTopWidth = 2.0;
+    const tableTopHeight = 0.05;
+    const tableTopDepth = 1.0;
+    const tableTopY = -0.29 - (tableTopHeight / 2); // Center Y = -0.315
+    
+    // Dimensi Panel Kaki Samping (Tebal, menghadap samping)
+    const panelHeight = 0.7; 
+    const panelY = tableTopY - (tableTopHeight / 2) - (panelHeight / 2); // Center Y = -0.69
+    const sidePanelThickness = 0.04; // tebal di X
+    const sidePanelDepth = 0.9;      // dalam di Z
+    const sidePanelXOffset = (tableTopWidth / 2) - (sidePanelThickness / 2) - 0.05; // 0.93
+
+    // 1. Permukaan Atas Meja (Coklat Tua)
+    createCubeWithShininess(tableTopWidth, tableTopHeight, tableTopDepth, darkWoodColor, 0, tableTopY, 0, bodyShininess);
+    
+    // 2. Panel Kaki Kiri (Coklat Tua, menghadap samping)
+    createCubeWithShininess(sidePanelThickness, panelHeight, sidePanelDepth, darkWoodColor, -sidePanelXOffset, panelY, 0, bodyShininess); 
+    
+    // 3. Panel Kaki Kanan (Coklat Tua, menghadap samping)
+    createCubeWithShininess(sidePanelThickness, panelHeight, sidePanelDepth, darkWoodColor, sidePanelXOffset, panelY, 0, bodyShininess);
+    
+    // --- Panel Depan (Putih dan Coklat) ---
+    // Ini semua adalah panel tipis yang menghadap ke depan
+    const frontPanelThickness = 0.02; // Tipis di Z
+    const frontPanelHeight = panelHeight * 0.9; // Sedikit lebih pendek
+    const frontPanelY = panelY - (panelHeight - frontPanelHeight) / 2; // -0.725
+    // Posisikan Z-nya agar sedikit di belakang tepi depan panel samping
+    const frontPanelZ = (-sidePanelDepth / 2) + 0.1 + (frontPanelThickness / 2); // -0.34
+    
+    // Tepi dalam panel kiri
+    const leftInnerEdge = -sidePanelXOffset + (sidePanelThickness / 2); // -0.93 + 0.02 = -0.91
+    // Tepi dalam panel kanan
+    const rightInnerEdge = sidePanelXOffset - (sidePanelThickness / 2); // 0.93 - 0.02 = 0.91
+    
+    // Tentukan lebar bagian-bagiannya
+    const whitePanelWidth = 1.2;
+    const brownPanelWidth = 0.2; // Panel coklat di sebelah putih
+    // Sisa bolongan = (rightInnerEdge - leftInnerEdge) - whitePanelWidth - brownPanelWidth
+    // (0.91 - (-0.91)) - 1.2 - 0.2 = 1.82 - 1.2 - 0.2 = 0.42
+    
+    // 4. Panel Putih (Menghadap Depan)
+    // Posisikan menempel di kiri
+    const whitePanelCenterX = leftInnerEdge + (whitePanelWidth / 2); // -0.91 + 0.6 = -0.31
+    createCubeWithShininess(
+        whitePanelWidth,
+        frontPanelHeight,
+        frontPanelThickness,
+        whitePanelColor,
+        whitePanelCenterX,
+        frontPanelY,
+        frontPanelZ,
+        bodyShininess
+    );
+    
+    // 5. Panel Sekat Coklat (Menghadap Depan)
+    // Posisikan menempel di sebelah kanan panel putih
+    const whitePanelRightEdge = whitePanelCenterX + (whitePanelWidth / 2); // -0.31 + 0.6 = 0.29
+    const brownPanelCenterX = whitePanelRightEdge + (brownPanelWidth / 2); // 0.29 + 0.1 = 0.39
+    
+    createCubeWithShininess(
+        brownPanelWidth,
+        frontPanelHeight,
+        frontPanelThickness,
+        darkWoodColor, // Warna coklat
+        brownPanelCenterX,
+        frontPanelY,
+        frontPanelZ,
+        bodyShininess
+    );
+    // Sisa ruang dari x=0.49 (0.39 + 0.1) ke x=0.91 (tepi dalam kanan) akan menjadi "bolongan"
+}
+// ----------------------------------------
+
 
 function createMonitor() {
     const bezelColor = vec4(0.2, 0.2, 0.2, 1.0);
@@ -223,13 +320,14 @@ function createMonitor() {
     const standHeight = 0.2
     const standYPos = yOffset - (screenHeight / 2) - (standHeight / 2);
 
-    // Mark all geometry added so far as part of the tilting screen assembly
+    // Tandai semua geometri sejauh ini sebagai bagian dari grup tilt (screen/frame)
     screenIndexCount = indices.length;
-    // Define the tilt pivot approximately at the top of the stand where screen mounts
+    // Tentukan pivot tilt
     screenPivotX = 0;
     screenPivotY = standYPos + (standHeight / 2);
     screenPivotZ = 0;
 
+    // --- Mulai Geometri Stand/Base (NON-TILT) ---
     createBoxWithHoleAndShininess(
         0.2, 
         0.35, 
@@ -247,10 +345,11 @@ function createMonitor() {
         bodyShininess
     );
 
-    const baseYPos = standYPos - (standHeight / 2) - 0.015;
+    const baseYPos = standYPos - (standHeight / 2) - 0.015; // Ini sekitar -0.275
+    // Y-bottom dari base ini adalah -0.275 - (0.03 / 2) = -0.29
     createCubeWithShininess(
         0.4, 
-        0.03, 
+        0.03, // Tinggi base
         0.3, 
         baseColor, 
         0, 
@@ -625,12 +724,16 @@ function setupBuffers() {
     gl.enableVertexAttribArray(texCoordLoc);
 }
 
+// --- FUNGSI RENDER (TIDAK BERUBAH DARI SEBELUMNYA, TAPI SUDAH BENAR) ---
 function render() {
     const get = id => document.getElementById(id);
     const bgColor = get('bg-color').value;
+    // Ambil nilai transform monitor (sekarang relatif ke meja)
     let posX = +get('position-x').value, posY = +get('position-y').value, posZ = +get('position-z').value;
     let rotX = +get('rotation-x').value, rotY = +get('rotation-y').value, rotZ = +get('rotation-z').value;
     let scaleValue = +get('scale').value;
+    
+    // tablePosX sudah diupdate oleh event listener, tapi kita update di sini untuk animasi
     
     if (isAnimating) {
         animationTime += 0.016;
@@ -647,14 +750,17 @@ function render() {
             get('scale').value = scaleValue.toFixed(2);
             get('scale-value').textContent = scaleValue.toFixed(2);
         } else if (animationPreset === 'tilt') {
-            // oscillate tilt between -12 and +12 degrees
             const t = 12 * Math.sin(animationTime * 2.0);
             tiltAngle = t;
-            const tiltSlider = document.getElementById('tilt-angle');
-            const tiltSpan = document.getElementById('tilt-angle-value');
-            if (tiltSlider && tiltSpan) {
-                tiltSlider.value = tiltAngle.toFixed(0);
-                tiltSpan.textContent = tiltAngle.toFixed(0);
+            get('tilt-angle').value = tiltAngle.toFixed(0);
+            get('tilt-angle-value').textContent = tiltAngle.toFixed(0);
+        } else if (animationPreset === 'slide_table') { // --- ANIMASI GESER MEJA ---
+            tablePosX = 1.5 * Math.sin(animationTime * 2.0);
+            const tableSlider = get('table-pos-x');
+            const tableSpan = get('table-pos-x-value');
+            if (tableSlider && tableSpan) {
+                tableSlider.value = tablePosX.toFixed(2);
+                tableSpan.textContent = tablePosX.toFixed(2);
             }
         }
     }
@@ -665,19 +771,39 @@ function render() {
     
     updateProjectionMatrix();
     
+    // --- PENERAPAN HIERARKI MATRIKS ---
+    
+    // 1. Matriks Kamera (View)
     let eye = vec3(eyeX, eyeY, eyeZ);
     let at = vec3(atX, atY, atZ);
     let up = vec3(upX, upY, upZ);
     let mvm = lookAt(eye, at, up);
     
-    mvm = mult(mvm, translate(posX, posY, posZ));
-    mvm = mult(mvm, rotate(rotZ, vec3(0, 0, 1)));
-    mvm = mult(mvm, rotate(rotY, vec3(0, 1, 0)));
-    mvm = mult(mvm, rotate(rotX, vec3(1, 0, 0)));
-    mvm = mult(mvm, scale(scaleValue, scaleValue, scaleValue));
+    // 2. Matriks Meja (Induk dari Monitor)
+    //    (mvm * transform_meja)
+    //    tablePosX diambil dari var global (yang diupdate oleh slider ATAU animasi)
+    let mvmTable = mult(mvm, translate(tablePosX, 0, 0)); 
     
-    // We'll render in two passes (screen, then stand+base) with separate matrices
+    // 3. Matriks Monitor Base (Anak dari Meja)
+    //    (mvmTable * transform_monitor)
+    let mvmBaseMonitor = mvmTable;
+    mvmBaseMonitor = mult(mvmBaseMonitor, translate(posX, posY, posZ));
+    mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotZ, vec3(0, 0, 1)));
+    mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotY, vec3(0, 1, 0)));
+    mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotX, vec3(1, 0, 0)));
+    mvmBaseMonitor = mult(mvmBaseMonitor, scale(scaleValue, scaleValue, scaleValue));
+
+    // 4. Matriks Screen (Anak dari Monitor Base)
+    //    (mvmBaseMonitor * transform_tilt)
+    let mvmScreen = mvmBaseMonitor;
+    mvmScreen = mult(mvmScreen, translate(screenPivotX, screenPivotY, screenPivotZ));
+    mvmScreen = mult(mvmScreen, rotate(tiltAngle, vec3(1, 0, 0)));
+    mvmScreen = mult(mvmScreen, translate(-screenPivotX, -screenPivotY, -screenPivotZ));
+
+    // --- END HIERARKI ---
+
     
+    // Set uniform lighting & texturing (berlaku untuk semua objek)
     gl.uniform1i(lightingUniforms.enableLighting, enableLighting);
     gl.uniform3fv(lightingUniforms.lightPosition, flatten(lightPosition));
     gl.uniform3fv(lightingUniforms.lightColor, flatten(lightColor));
@@ -687,7 +813,6 @@ function render() {
     gl.uniform1f(lightingUniforms.diffuseStrength, diffuseStrength);
     gl.uniform1f(lightingUniforms.specularStrength, specularStrength);
     
-    // Set texture uniforms
     gl.uniform1i(lightingUniforms.useTextures, useTextures);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, checkerboardTexture);
@@ -697,22 +822,45 @@ function render() {
     gl.uniform1i(lightingUniforms.wallpaperTexture, 1);
     
     const wireframe = get('wireframe-mode').checked;
+    let normalMatrix; // Didefinisikan di sini untuk digunakan kembali
 
-    // 1) Render tilting screen group with extra rotation about pivot
-    let mvmScreen = mvm;
-    // Apply tilt about X axis around the pivot in model space
-    mvmScreen = mult(mvmScreen, translate(screenPivotX, screenPivotY, screenPivotZ));
-    mvmScreen = mult(mvmScreen, rotate(tiltAngle, vec3(1, 0, 0)));
-    mvmScreen = mult(mvmScreen, translate(-screenPivotX, -screenPivotY, -screenPivotZ));
+    // --- DRAWING PASSES SESUAI HIERARKI ---
+    
+    // PASS 1: Gambar Meja (menggunakan mvmTable)
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmTable));
+    normalMatrix = mat3();
+    let invTable = inverse(mvmTable);
+    let trsTable = transpose(invTable);
+    normalMatrix = mat3(
+        trsTable[0][0], trsTable[0][1], trsTable[0][2],
+        trsTable[1][0], trsTable[1][1], trsTable[1][2],
+        trsTable[2][0], trsTable[2][1], trsTable[2][2]
+    );
+    gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+    
+    const tableIndexStart = monitorIndexCount;
+    if (tableIndexCount > 0) {
+        if (wireframe) {
+            for (let i = tableIndexStart; i < indices.length; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, tableIndexCount, gl.UNSIGNED_SHORT, tableIndexStart * 2);
+        }
+    }
+
+
+    // PASS 2: Gambar Screen (menggunakan mvmScreen)
     gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmScreen));
     let invScr = inverse(mvmScreen);
     let trsScr = transpose(invScr);
-    let normalMatrix = mat3(
+    normalMatrix = mat3(
         trsScr[0][0], trsScr[0][1], trsScr[0][2],
         trsScr[1][0], trsScr[1][1], trsScr[1][2],
         trsScr[2][0], trsScr[2][1], trsScr[2][2]
     );
     gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+    
     if (screenIndexCount > 0) {
         if (wireframe) {
             for (let i = 0; i < screenIndexCount; i += 3) {
@@ -723,9 +871,9 @@ function render() {
         }
     }
 
-    // 2) Render the rest (stand + base) without tilt using base matrix
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvm));
-    let invBase = inverse(mvm);
+    // PASS 3: Gambar Monitor Stand/Base (menggunakan mvmBaseMonitor)
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmBaseMonitor));
+    let invBase = inverse(mvmBaseMonitor);
     let trsBase = transpose(invBase);
     normalMatrix = mat3(
         trsBase[0][0], trsBase[0][1], trsBase[0][2],
@@ -733,11 +881,12 @@ function render() {
         trsBase[2][0], trsBase[2][1], trsBase[2][2]
     );
     gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+    
     const restIndexStart = screenIndexCount;
-    const restIndexCount = indices.length - screenIndexCount;
+    const restIndexCount = monitorIndexCount - screenIndexCount; // Hanya index stand
     if (restIndexCount > 0) {
         if (wireframe) {
-            for (let i = restIndexStart; i < indices.length; i += 3) {
+            for (let i = restIndexStart; i < monitorIndexCount; i += 3) {
                 gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
             }
         } else {
@@ -930,6 +1079,8 @@ function setupEventListeners() {
         document.getElementById('animate-btn').textContent = isAnimating ? 'Stop Animation' : 'Start Animation';
     };
     document.getElementById('animation-preset').onchange = (e) => animationPreset = e.target.value;
+    
+    // Slider untuk Monitor (scale, position, rotation)
     const sliders = ['scale', 'position-x', 'position-y', 'position-z', 'rotation-x', 'rotation-y', 'rotation-z'];
     sliders.forEach(id => {
         const slider = document.getElementById(id);
@@ -941,6 +1092,18 @@ function setupEventListeners() {
             });
         }
     });
+
+    // --- INI ADALAH EVENT LISTENER UNTUK SLIDER MEJA ---
+    const tableSlider = document.getElementById('table-pos-x');
+    const tableSpan = document.getElementById('table-pos-x-value');
+    if (tableSlider && tableSpan) {
+        tableSlider.addEventListener('input', () => {
+            tablePosX = parseFloat(tableSlider.value); // Update var global
+            tableSpan.textContent = tablePosX.toFixed(2);
+        });
+    }
+    // ----------------------------------------------
+
 
     // Tilt slider wiring
     const tiltSlider = document.getElementById('tilt-angle');
