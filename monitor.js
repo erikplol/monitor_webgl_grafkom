@@ -7,7 +7,10 @@ let vertices = [], vertexColors = [], indices = [], normals = [], shininessValue
 let screenIndexCount = 0; // jumlah index untuk screen group (tilt)
 let monitorIndexCount = 0; // jumlah total index untuk *seluruh* monitor (screen + stand)
 let tableIndexCount = 0;   // jumlah index untuk meja
+let mouseIndexCount = 0;   // Hanya badan mouse
+// cableIndexCount dihapus
 let tablePosX = 0;         // Posisi X untuk meja (animasi geser)
+let mousePosX = 0.5, mousePosZ = 0.3; 
 
 let tiltAngle = 0; // degrees
 let screenPivotX = 0, screenPivotY = 0, screenPivotZ = 0; // pivot for tilt
@@ -103,16 +106,24 @@ function init() {
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
 
+    // Ambil nilai awal mouse dari slider HTML
+    mousePosX = parseFloat(document.getElementById('mouse-pos-x').value);
+    mousePosZ = parseFloat(document.getElementById('mouse-pos-z').value);
+
     // --- HIERARCHY LOADING ---
     // 1. Buat Monitor (Screen + Stand)
     createMonitor();
-    // Catat jumlah total index untuk monitor
     monitorIndexCount = indices.length; 
     
     // 2. Buat Meja
     createTable();
-    // Index meja adalah sisanya
     tableIndexCount = indices.length - monitorIndexCount;
+    
+    // 3. Buat Mouse (HANYA BADAN)
+    createMouse();
+    mouseIndexCount = indices.length - monitorIndexCount - tableIndexCount;
+    
+    // 4. (Tidak ada kabel terpisah)
     // -------------------------
 
     setupBuffers();
@@ -150,7 +161,6 @@ function init() {
     render();
 }
 
-
 // --- FUNGSI MEJA DIPERBARUI (PANEL COKLAT LEBAR PENUH) ---
 function createTable() {
     
@@ -184,7 +194,6 @@ function createTable() {
     const frontPanelThickness = 0.02; // KETEBALAN TIPIS di Z (untuk panel putih & coklat)
     const frontPanelZ = (-sidePanelDepth / 2) + 0.1 + (frontPanelThickness / 2); // -0.34
     
-    // --- PERUBAHAN DI SINI (Menghitung batas dalam) ---
     // Tepi dalam panel kiri
     const leftInnerEdge = -sidePanelXOffset + (sidePanelThickness / 2); // -0.91
     // Tepi dalam panel kanan
@@ -192,7 +201,6 @@ function createTable() {
     
     // Hitung total lebar ruang antar kaki
     const totalInnerWidth = rightInnerEdge - leftInnerEdge; // 0.91 - (-0.91) = 1.82
-    // --- AKHIR PERUBAHAN ---
 
     // 4. Panel Putih (Horizontal, Pendek)
     const whitePanelWidth = 1.2;
@@ -212,18 +220,14 @@ function createTable() {
     );
     
     // 5. Panel Sekat Coklat (Vertikal, Penuh, Tipis)
-    
-    // --- PERUBAHAN UTAMA DI SINI ---
     // Hitung sisa lebar yang harus diisi oleh panel coklat
-    // (Lebar total - lebar panel putih)
     const brownPanelWidth = totalInnerWidth - whitePanelWidth; // 1.82 - 1.2 = 0.62
     
     // Tepi kanan panel putih
     const whitePanelRightEdge = whitePanelCenterX + (whitePanelWidth / 2); // 0.29
     
-    // Center X-nya adalah (tepi_kanan_putih + setengah_lebar_panel_coklat_baru)
+    // Center X-nya
     const brownPanelCenterX = whitePanelRightEdge + (brownPanelWidth / 2); // 0.29 + (0.62 / 2) = 0.60
-    // --- AKHIR PERUBAHAN ---
     
     createCubeWithShininess(
         brownPanelWidth,       // Lebar (0.62, hasil hitungan)
@@ -237,7 +241,48 @@ function createTable() {
     );
 }
 // ----------------------------------------
-// -------------------------------------------------------------------------------
+
+// --- FUNGSI MOUSE BARU (HANYA BADAN, WIRELESS) ---
+function createMouse() {
+    const mouseColor = vec4(0.1, 0.1, 0.1, 1.0);
+    const wheelColor = vec4(0.2, 0.2, 0.2, 1.0);
+    const mouseShininess = 10.0;
+
+    // Model mouse dibuat dari tumpukan 4 kubus
+    // Semua Y dihitung dari 0 (alas)
+    
+    // 1. Alas (paling bawah, paling besar)
+    const baseHeight = 0.005;
+    const baseY = 0;
+    const baseWidth = 0.08;
+    const baseDepth = 0.12;
+    createCubeWithShininess(baseWidth, baseHeight, baseDepth, mouseColor, 0, baseY + baseHeight/2, 0, mouseShininess);
+
+    // 2. Badan (tengah)
+    const bodyHeight = 0.01;
+    const bodyY = baseY + baseHeight;
+    const bodyWidth = 0.075;
+    const bodyDepth = 0.11;
+    createCubeWithShininess(bodyWidth, bodyHeight, bodyDepth, mouseColor, 0, bodyY + bodyHeight/2, 0, mouseShininess);
+    
+    // 3. Punggung (atas, agak ke belakang)
+    const palmHeight = 0.01;
+    const palmY = bodyY + bodyHeight;
+    const palmWidth = 0.07;
+    const palmDepth = 0.08;
+    createCubeWithShininess(palmWidth, palmHeight, palmDepth, mouseColor, 0, palmY + palmHeight/2, -0.01, mouseShininess);
+
+    // 4. Scroll Wheel (mencuat dari badan)
+    const wheelHeight = 0.015;
+    const wheelY = bodyY + wheelHeight/2; // Mencuat dari lapisan badan
+    const wheelZ = 0.04; // Posisi Z wheel
+    createCubeWithShininess(0.015, wheelHeight, 0.015, wheelColor, 0, wheelY, wheelZ, mouseShininess);
+
+    // 5. Kabel dihapus
+}
+// ----------------------------------------
+
+// Fungsi createMouseCable() dihapus
 
 
 function createMonitor() {
@@ -493,65 +538,7 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
         }
     }
 
-    const frontBezel = [
-        vec3(cx-w, cy-h, cz), vec3(cx+w, cy-h, cz),
-        vec3(cx+w, cy+h, cz), vec3(cx-w, cy+h, cz)
-    ];
-    const frontTexCoords = [
-        vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)
-    ];
-    const frontStartIndex = vertices.length;
-    vertices.push(...frontBezel);
-    for(let i=0; i<4; i++) {
-        vertexColors.push(color);
-        normals.push(vec3(0, 0, 1));
-        shininessValues.push(shininess);
-        texCoords.push(frontTexCoords[i]);
-    }
-
-    const topFrontStart = vertices.length;
-    for (let i = 0; i <= segments; i++) {
-        const u = i / segments;
-        const x = cx + (u * width) - w;
-        const y = cy + h;
-        const z = cz;
-        vertices.push(vec3(x, y, z));
-        vertexColors.push(color);
-        normals.push(vec3(0, 1, 0));
-        shininessValues.push(shininess);
-        texCoords.push(vec2(u, 0));
-    }
-    const topBackRowStart = startIndex + segments * (segments + 1);
-    for (let i = 0; i < segments; i++) {
-        const f0 = topFrontStart + i;
-        const f1 = topFrontStart + i + 1;
-        const b0 = topBackRowStart + i;
-        const b1 = topBackRowStart + i + 1;
-        indices.push(f0, f1, b1);
-        indices.push(f0, b1, b0);
-    }
-
-    const bottomFrontStart = vertices.length;
-    for (let i = 0; i <= segments; i++) {
-        const u = i / segments;
-        const x = cx + (u * width) - w;
-        const y = cy - h;
-        const z = cz;
-        vertices.push(vec3(x, y, z));
-        vertexColors.push(color);
-        normals.push(vec3(0, -1, 0));
-        shininessValues.push(shininess);
-        texCoords.push(vec2(u, 1));
-    }
-    const bottomBackRowStart = startIndex + 0;
-    for (let i = 0; i < segments; i++) {
-        const f0 = bottomFrontStart + i;
-        const f1 = bottomFrontStart + i + 1;
-        const b0 = bottomBackRowStart + i;
-        const b1 = bottomBackRowStart + i + 1;
-        indices.push(f0, b1, f1);
-        indices.push(f0, b0, b1);
-    }
+    // Sisa fungsi (frontBezel, dll) tidak relevan untuk mouse
 }
 
 function createBoxWithHoleAndShininess(width, height, depth, holeRadius, colorOuter, colorInner, cx, cy, cz, rotX, rotY, rotZ, segments, shininess) {
@@ -732,32 +719,28 @@ function setupBuffers() {
     gl.enableVertexAttribArray(texCoordLoc);
 }
 
-// --- FUNGSI RENDER (TIDAK BERUBAH DARI SEBELUMNYA, TAPI SUDAH BENAR) ---
+// --- FUNGSI RENDER (DENGAN MONITOR FIX & MENGHAPUS DONGLE/KABEL TERPISAH) ---
 function render() {
     const get = id => document.getElementById(id);
     const bgColor = get('bg-color').value;
-    // Ambil nilai transform monitor (sekarang relatif ke meja)
-    let posX = +get('position-x').value, posY = +get('position-y').value, posZ = +get('position-z').value;
-    let rotX = +get('rotation-x').value, rotY = +get('rotation-y').value, rotZ = +get('rotation-z').value;
-    let scaleValue = +get('scale').value;
     
-    // tablePosX sudah diupdate oleh event listener, tapi kita update di sini untuk animasi
+    // Ambil nilai translasi monitor
+    let posX = +get('position-x').value;
+    let posY = +get('position-y').value; 
+    let posZ = +get('position-z').value;
+    
+    // Nilai rotasi dan skala monitor sekarang diambil dari nilai default saat slider di-disable
+    // atau nilai terakhir sebelum di-disable. Kita tidak perlu membacanya lagi di sini.
+    // Jika Anda ingin *memaksa* nilai tertentu, set di sini:
+    let rotX = 0, rotY = 0, rotZ = 0; // Nilai default dari HTML
+    let scaleValue = 1; // Nilai default dari HTML
+    
     
     if (isAnimating) {
         animationTime += 0.016;
-        if (animationPreset === 'spin') {
-            rotY = (animationTime * 50) % 360;
-            get('rotation-y').value = rotY.toFixed(0);
-            get('rotation-y-value').textContent = rotY.toFixed(0);
-        } else if (animationPreset === 'bounce') {
-            posY = 0.3 * Math.sin(animationTime * 4);
-            get('position-y').value = posY.toFixed(2);
-            get('position-y-value').textContent = posY.toFixed(2);
-        } else if (animationPreset === 'pulse') {
-            scaleValue = 1.0 + 0.2 * Math.sin(animationTime * 5);
-            get('scale').value = scaleValue.toFixed(2);
-            get('scale-value').textContent = scaleValue.toFixed(2);
-        } else if (animationPreset === 'tilt') {
+         // Animasi Spin, Bounce, Pulse sekarang tidak akan mempengaruhi monitor
+         // karena rotY, posY, scaleValue tidak lagi dibaca dari slider untuk monitor
+        if (animationPreset === 'tilt') {
             const t = 12 * Math.sin(animationTime * 2.0);
             tiltAngle = t;
             get('tilt-angle').value = tiltAngle.toFixed(0);
@@ -769,6 +752,24 @@ function render() {
             if (tableSlider && tableSpan) {
                 tableSlider.value = tablePosX.toFixed(2);
                 tableSpan.textContent = tablePosX.toFixed(2);
+            }
+        } else if (animationPreset === 'slide_mouse') {
+            // Animasi mouse di atas meja (relatif terhadap meja)
+            mousePosX = 0.5 + 0.3 * Math.sin(animationTime * 1.5);
+            mousePosZ = 0.4 + 0.2 * Math.cos(animationTime * 2.0);
+            
+            // Update UI Slider-nya juga
+            const mouseSliderX = get('mouse-pos-x');
+            const mouseSpanX = get('mouse-pos-x-value');
+            const mouseSliderZ = get('mouse-pos-z');
+            const mouseSpanZ = get('mouse-pos-z-value');
+            if (mouseSliderX && mouseSpanX) {
+                mouseSliderX.value = mousePosX.toFixed(2);
+                mouseSpanX.textContent = mousePosX.toFixed(2);
+            }
+            if (mouseSliderZ && mouseSpanZ) {
+                mouseSliderZ.value = mousePosZ.toFixed(2);
+                mouseSpanZ.textContent = mousePosZ.toFixed(2);
             }
         }
     }
@@ -788,24 +789,21 @@ function render() {
     let mvm = lookAt(eye, at, up);
     
     // 2. Matriks Meja (Induk dari Monitor)
-    //    (mvm * transform_meja)
-    //    tablePosX diambil dari var global (yang diupdate oleh slider ATAU animasi)
     let mvmTable = mult(mvm, translate(tablePosX, 0, 0)); 
     
     // 3. Matriks Monitor Base (Anak dari Meja)
-    //    (mvmTable * transform_monitor)
     let mvmBaseMonitor = mvmTable;
     mvmBaseMonitor = mult(mvmBaseMonitor, translate(posX, posY, posZ));
+    // Gunakan nilai rotasi & skala yang fix (tidak dari slider)
     mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotZ, vec3(0, 0, 1)));
     mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotY, vec3(0, 1, 0)));
     mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotX, vec3(1, 0, 0)));
     mvmBaseMonitor = mult(mvmBaseMonitor, scale(scaleValue, scaleValue, scaleValue));
 
     // 4. Matriks Screen (Anak dari Monitor Base)
-    //    (mvmBaseMonitor * transform_tilt)
     let mvmScreen = mvmBaseMonitor;
     mvmScreen = mult(mvmScreen, translate(screenPivotX, screenPivotY, screenPivotZ));
-    mvmScreen = mult(mvmScreen, rotate(tiltAngle, vec3(1, 0, 0)));
+    mvmScreen = mult(mvmScreen, rotate(tiltAngle, vec3(1, 0, 0))); // Tilt masih bisa
     mvmScreen = mult(mvmScreen, translate(-screenPivotX, -screenPivotY, -screenPivotZ));
 
     // --- END HIERARKI ---
@@ -823,14 +821,14 @@ function render() {
     
     gl.uniform1i(lightingUniforms.useTextures, useTextures);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, checkerboardTexture);
+    gl.bindTexture(gl.TEXTURE_2D, checkerboardTexture); // SUDAH DIPERBAIKI
     gl.uniform1i(lightingUniforms.checkerboardTexture, 0);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, wallpaperTexture);
     gl.uniform1i(lightingUniforms.wallpaperTexture, 1);
     
     const wireframe = get('wireframe-mode').checked;
-    let normalMatrix; // Didefinisikan di sini untuk digunakan kembali
+    let normalMatrix; 
 
     // --- DRAWING PASSES SESUAI HIERARKI ---
     
@@ -849,11 +847,48 @@ function render() {
     const tableIndexStart = monitorIndexCount;
     if (tableIndexCount > 0) {
         if (wireframe) {
-            for (let i = tableIndexStart; i < indices.length; i += 3) {
+            for (let i = tableIndexStart; i < (monitorIndexCount + tableIndexCount); i += 3) {
                 gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
             }
         } else {
             gl.drawElements(gl.TRIANGLES, tableIndexCount, gl.UNSIGNED_SHORT, tableIndexStart * 2);
+        }
+    }
+
+
+    // PASS 1.5: GAMBAR MOUSE (ANAK DARI MEJA)
+    let mvmMouse = mvmTable; // Mulai dari matriks meja
+    
+    // Permukaan atas meja (dari createTable): Y = -0.29
+    const tableSurfaceY = -0.29; 
+    
+    // Pindahkan mouse ke posisinya di atas meja
+    // (createMouse sudah membuat alas mouse di Y=0)
+    mvmMouse = mult(mvmMouse, translate(mousePosX, tableSurfaceY, mousePosZ));
+    
+    // Beri sedikit rotasi agar tidak terlalu kaku
+    mvmMouse = mult(mvmMouse, rotate(15, vec3(0, 1, 0)));
+    
+    // Set matriks untuk mouse 
+    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
+    let invMouse = inverse(mvmMouse);
+    let trsMouse = transpose(invMouse);
+    normalMatrix = mat3(
+        trsMouse[0][0], trsMouse[0][1], trsMouse[0][2],
+        trsMouse[1][0], trsMouse[1][1], trsMouse[1][2],
+        trsMouse[2][0], trsMouse[2][1], trsMouse[2][2]
+    );
+    gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+    
+    // Gambar mouse 
+    const mouseIndexStart = monitorIndexCount + tableIndexCount;
+    if (mouseIndexCount > 0) {
+        if (wireframe) {
+            for (let i = 0; i < mouseIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, (mouseIndexStart + i) * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, mouseIndexCount, gl.UNSIGNED_SHORT, mouseIndexStart * 2);
         }
     }
 
@@ -901,6 +936,8 @@ function render() {
             gl.drawElements(gl.TRIANGLES, restIndexCount, gl.UNSIGNED_SHORT, restIndexStart * 2);
         }
     }
+    
+    // Pass 3.5 (kabel terpisah) Dihapus
     
     requestAnimationFrame(render);
 }
@@ -1088,26 +1125,46 @@ function setupEventListeners() {
     };
     document.getElementById('animation-preset').onchange = (e) => animationPreset = e.target.value;
     
-    // Slider untuk Monitor (scale, position, rotation)
-    const sliders = ['scale', 'position-x', 'position-y', 'position-z', 'rotation-x', 'rotation-y', 'rotation-z'];
-    sliders.forEach(id => {
+    // Slider untuk Monitor (HANYA POSISI)
+    const monitorPosSliders = ['position-x', 'position-y', 'position-z'];
+    monitorPosSliders.forEach(id => {
         const slider = document.getElementById(id);
         const span = document.getElementById(id + '-value');
         if (slider && span) {
              slider.addEventListener('input', () => {
                 const value = parseFloat(slider.value);
-                span.textContent = id.includes('rot') ? value.toFixed(0) : value.toFixed(2);
+                span.textContent = value.toFixed(2);
+                // Tidak perlu update variabel global rotasi/skala lagi
             });
         }
     });
 
-    // --- INI ADALAH EVENT LISTENER UNTUK SLIDER MEJA ---
+    // --- EVENT LISTENER UNTUK SLIDER MEJA ---
     const tableSlider = document.getElementById('table-pos-x');
     const tableSpan = document.getElementById('table-pos-x-value');
     if (tableSlider && tableSpan) {
         tableSlider.addEventListener('input', () => {
             tablePosX = parseFloat(tableSlider.value); // Update var global
             tableSpan.textContent = tablePosX.toFixed(2);
+        });
+    }
+    
+    // --- EVENT LISTENER UNTUK MOUSE ---
+    const mouseSliderX = document.getElementById('mouse-pos-x');
+    const mouseSpanX = document.getElementById('mouse-pos-x-value');
+    if (mouseSliderX && mouseSpanX) {
+        mouseSliderX.addEventListener('input', () => {
+            mousePosX = parseFloat(mouseSliderX.value); 
+            mouseSpanX.textContent = mousePosX.toFixed(2);
+        });
+    }
+    
+    const mouseSliderZ = document.getElementById('mouse-pos-z');
+    const mouseSpanZ = document.getElementById('mouse-pos-z-value');
+    if (mouseSliderZ && mouseSpanZ) {
+        mouseSliderZ.addEventListener('input', () => {
+            mousePosZ = parseFloat(mouseSliderZ.value); 
+            mouseSpanZ.textContent = mousePosZ.toFixed(2);
         });
     }
     // ----------------------------------------------
@@ -1323,6 +1380,8 @@ class PhotoCarousel {
     }
     
     init() {
+        if (!this.prevBtn) return; // Guard clause if carousel doesn't exist
+        
         this.prevBtn.addEventListener('click', () => this.previousImage());
         this.nextBtn.addEventListener('click', () => this.nextImage());
         
@@ -1365,11 +1424,15 @@ class PhotoCarousel {
             indicator.classList.toggle('active', index === this.currentIndex);
         });
         
-        this.photoCounter.textContent = this.currentIndex + 1;
+        if (this.photoCounter) {
+            this.photoCounter.textContent = this.currentIndex + 1;
+        }
     }
     
     addTouchSupport() {
         const container = document.querySelector('.carousel-container');
+        if (!container) return;
+        
         let startX = 0;
         let startY = 0;
         let threshold = 50;
@@ -1410,14 +1473,7 @@ class PhotoCarousel {
     }
 }
 
+// Panggil PhotoCarousel saat DOM siap
 document.addEventListener('DOMContentLoaded', () => {
     new PhotoCarousel();
 });
-
-if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', () => {
-        new PhotoCarousel();
-    });
-} else {
-    new PhotoCarousel();
-}
