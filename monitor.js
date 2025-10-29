@@ -1,87 +1,421 @@
 "use strict";
+
+/**
+ * ============================================================================
+ * CONFIGURATION OBJECT
+ * ============================================================================
+ */
+const CONFIG = {
+    // Mouse interaction settings
+    mouse: {
+        clickDuration: 0.6, 
+        clickDepth: 0.02,   
+        defaultPosX: 0.5,   
+        defaultPosY: 0,     
+        defaultPosZ: 0.3    
+    },
+    // Camera default positioning
+    camera: {
+        defaultEyeX: 0,          
+        defaultEyeY: 0,          
+        defaultEyeZ: 3,         
+        defaultAtX: 0,           
+        defaultAtY: 0,           
+        defaultAtZ: 0,           
+        defaultUpX: 0,           
+        defaultUpY: 1,          
+        defaultUpZ: 0            
+    },
+    // Projection matrix parameters
+    projection: {
+        defaultFov: 50,          
+        nearPlane: 0.1,          
+        farPlane: 100,           
+        orthoLeft: -2,           
+        orthoRight: 2,           
+        orthoBottom: -2,         
+        orthoTop: 2              
+    },
+    // Phong lighting model parameters
+    lighting: {
+        defaultAmbientStrength: 0.3,   
+        defaultDiffuseStrength: 1.0,   
+        defaultSpecularStrength: 1.5   
+    }
+};
+
+/**
+ * ============================================================================
+ * GLOBAL VARIABLES
+ * ============================================================================
+ */
+
+// --- WebGL Core ---
 let canvas, gl, program;
 let modelViewMatrix, projectionMatrix, modelViewMatrixLoc, projectionMatrixLoc;
-let vertices = [], vertexColors = [], indices = [], normals = [], shininessValues = [], texCoords = [];
 
-// Draw partitioning for hierarchical rendering
-let screenIndexCount = 0; // jumlah index untuk screen group (tilt)
-let monitorIndexCount = 0; // jumlah total index untuk *seluruh* monitor (screen + stand)
-let tableIndexCount = 0;   // jumlah index untuk meja
-let mouseIndexCount = 0;   // Hanya badan mouse
-// cableIndexCount dihapus
-let tablePosX = 0;         // Posisi X untuk meja (animasi geser)
-let mousePosX = 0.5, mousePosZ = 0.3; 
+// --- Geometry Buffers ---
+// All geometry is stored in shared arrays and rendered using indexed drawing
+let vertices = [];           
+let vertexColors = [];
+let indices = [];
+let normals = [];
+let shininessValues = [];
+let texCoords = [];
 
-// Mouse part index ranges (filled in createMouse)
-let mouseBaseIndexStart = 0, mouseBaseIndexCount = 0;
-let mouseBodyIndexStart = 0, mouseBodyIndexCount = 0;
-let mousePalmIndexStart = 0, mousePalmIndexCount = 0;
-let mouseLeftIndexStart = 0, mouseLeftIndexCount = 0;
-let mouseGripIndexStart = 0, mouseGripIndexCount = 0;
-let mouseRightIndexStart = 0, mouseRightIndexCount = 0;
-let mouseWheelIndexStart = 0, mouseWheelIndexCount = 0;
+// --- Index Counts for Each Model Part ---
+// These track how many indices belong to each object for proper rendering
+let screenIndexCount = 0;    // Monitor screen (textured, tilts)
+let monitorIndexCount = 0;   // Entire monitor (screen + stand)
+let tableIndexCount = 0;     // Table/desk surface
+let mouseIndexCount = 0;     // Entire mouse
 
-// Local pivots for mouse parts (in mouse local coordinates)
-let mouseLeftPivot = vec3(0,0,0);
-let mouseRightPivot = vec3(0,0,0);
-let mouseWheelPivot = vec3(0,0,0);
+// --- Hierarchical Transform Variables ---
+// Table is the parent; monitor and mouse are children
+let tablePosX = 0, tablePosY = 0, tablePosZ = 0;
+let mousePosX = CONFIG.mouse.defaultPosX;
+let mousePosY = CONFIG.mouse.defaultPosY;
+let mousePosZ = CONFIG.mouse.defaultPosZ;
 
-// Mouse animation state (left and right clicks)
-let mouseLeftClickAnimating = false;
-let mouseLeftClickTime = 0;
-let mouseRightClickAnimating = false;
-let mouseRightClickTime = 0;
-const mouseClickDuration = 0.6; // seconds (down+up) - made longer per request
-const mouseClickDepth = 0.02; // how far button moves down on click
+// --- Mouse Component Indices ---
+// Mouse is built from multiple parts for independent animation
+let mouseBaseIndexStart = 0, mouseBaseIndexCount = 0;      // Bottom shell
+let mouseBodyIndexStart = 0, mouseBodyIndexCount = 0;      // Main body
+let mousePalmIndexStart = 0, mousePalmIndexCount = 0;      // Palm rest area
+let mouseLeftIndexStart = 0, mouseLeftIndexCount = 0;      // Left click button
+let mouseGripIndexStart = 0, mouseGripIndexCount = 0;      // Side grip (unused)
+let mouseRightIndexStart = 0, mouseRightIndexCount = 0;    // Right click button
+let mouseWheelIndexStart = 0, mouseWheelIndexCount = 0;    // Scroll wheel
 
-let mouseScrollActive = false;
-let mouseWheelAngle = 0; // degrees
+// --- Mouse Animation Pivots ---
+// Pivot points for rotating/translating mouse parts
+let mouseLeftPivot = vec3(0,0,0);     
+let mouseRightPivot = vec3(0,0,0);     
+let mouseWheelPivot = vec3(0,0,0);   
 
-let tiltAngle = 0; // degrees
-let screenPivotX = 0, screenPivotY = 0, screenPivotZ = 0; // pivot for tilt
-let scalePivotX = 0, scalePivotY = 0, scalePivotZ = 0; // pivot for monitor scale (foot)
-let isAnimating = false, animationPreset = 'spin', animationTime = 0;
+// --- Mouse Interaction State ---
+let mouseLeftClickAnimating = false;  
+let mouseLeftClickTime = 0;          
+let mouseRightClickAnimating = false;  
+let mouseRightClickTime = 0;           
+let mouseScrollActive = false;         
+let mouseWheelAngle = 0;              
 
-// Texture variables
-let checkerboardTexture, wallpaperTexture;
-let useTextures = true;
+// --- Monitor Transform Variables ---
+let tiltAngle = 0;                                         
+let screenPivotX = 0, screenPivotY = 0, screenPivotZ = 0;   
+let scalePivotX = 0, scalePivotY = 0, scalePivotZ = 0;     
 
-// Projection control variables
-let projectionMode = 'perspective';
-let fov = 50, nearPlane = 0.1, farPlane = 100;
-let orthoLeft = -2, orthoRight = 2, orthoBottom = -2, orthoTop = 2;
+// --- Animation System State ---
+let isAnimating = false;         
+let animationPreset = 'spin';   
+let animationTime = 0;          
 
-// Camera control variables
-let eyeX = 0, eyeY = 0, eyeZ = 3;
-let atX = 0, atY = 0, atZ = 0;
-let upX = 0, upY = 1, upZ = 0;
+// --- Texture System ---
+let wallpaperTexture;           
+let useTextures = true;          
 
-// Mouse control variables
-let mouseDown = false;
-let lastMouseX = 0, lastMouseY = 0;
-let mousePan = false; // true when shift+drag is active
-let cameraRadius = 3;
-let cameraTheta = 0; // horizontal rotation
-let cameraPhi = 0;   // vertical rotation
+// --- Projection Mode ---
+let projectionMode = 'perspective';  
+let fov = CONFIG.projection.defaultFov;
+let nearPlane = CONFIG.projection.nearPlane;
+let farPlane = CONFIG.projection.farPlane;
+let orthoLeft = CONFIG.projection.orthoLeft;
+let orthoRight = CONFIG.projection.orthoRight;
+let orthoBottom = CONFIG.projection.orthoBottom;
+let orthoTop = CONFIG.projection.orthoTop;
 
+// --- Camera Position (View Matrix) ---
+let eyeX = CONFIG.camera.defaultEyeX;    
+let eyeY = CONFIG.camera.defaultEyeY;
+let eyeZ = CONFIG.camera.defaultEyeZ;
+let atX = CONFIG.camera.defaultAtX;      
+let atY = CONFIG.camera.defaultAtY;
+let atZ = CONFIG.camera.defaultAtZ;
+let upX = CONFIG.camera.defaultUpX;     
+let upY = CONFIG.camera.defaultUpY;
+let upZ = CONFIG.camera.defaultUpZ;
+
+// --- Camera Interaction State ---
+let mouseDown = false;           
+let lastMouseX = 0, lastMouseY = 0; 
+let mousePan = false;            
+let cameraRadius = 3;            
+let cameraTheta = 0;             
+let cameraPhi = 0;               
+
+/**
+ * Initializes spherical camera coordinates from Cartesian eye position.
+ * Used for spherical camera control (orbit around target).
+ */
 function initializeSphericalCoords() {
     cameraRadius = Math.sqrt(eyeX * eyeX + eyeY * eyeY + eyeZ * eyeZ);
     cameraTheta = Math.atan2(eyeZ, eyeX);
     cameraPhi = Math.asin(eyeY / cameraRadius);
 }
 
-// Lighting variables
-let enableLighting = true;
-let lightPosition = vec3(-5.0, 5.0, 8.0);
-let lightColor = vec3(0.5, 0.5, 0.5);
-let ambientLight = vec3(0.4, 0.4, 0.4);
-let ambientStrength = 0.25;
-let diffuseStrength = 1.0;
-let specularStrength = 1.2;
+// --- Phong Lighting Model Variables ---
+let enableLighting = true;      
+let lightPosition = vec3(-5.0, 5.0, 8.0);   
+let lightColor = vec3(0.5, 0.5, 0.5);        
+let ambientLight = vec3(0.3, 0.3, 0.3);     
+let ambientStrength = CONFIG.lighting.defaultAmbientStrength;   
+let diffuseStrength = CONFIG.lighting.defaultDiffuseStrength;  
+let specularStrength = CONFIG.lighting.defaultSpecularStrength;  
 
-// Uniform locations for lighting
-let lightingUniforms = {};
+let lightingUniforms = {};      
 
+/**
+ * ============================================================================
+ * LEFT-CHILD RIGHT-SIBLING TREE STRUCTURE
+ * ============================================================================
+ * Implements hierarchical scene graph using LCRS (Left-Child Right-Sibling) representation.
+ * Each node has:
+ * - leftChild: First child node
+ * - rightSibling: Next sibling node
+ */
+
+class SceneNode {
+    constructor(name, renderFunc = null, transformFunc = null) {
+        this.name = name;
+        this.renderFunc = renderFunc;
+        this.transformFunc = transformFunc;
+        this.leftChild = null;
+        this.rightSibling = null;
+        this.transform = mat4();
+        this.worldTransform = mat4();
+    }
+
+    addChild(childNode) {
+        if (!this.leftChild) {
+            this.leftChild = childNode;
+        } else {
+            let current = this.leftChild;
+            while (current.rightSibling) current = current.rightSibling;
+            current.rightSibling = childNode;
+        }
+        return this;
+    }
+
+    traverse(callback, parentTransform = mat4()) {
+        // Compute transforms
+        if (this.transformFunc) this.transform = this.transformFunc();
+        this.worldTransform = mult(parentTransform, this.transform);
+        
+        // Process this node
+        callback(this);
+        
+        // LCRS traversal: children then siblings
+        if (this.leftChild) this.leftChild.traverse(callback, this.worldTransform);
+        if (this.rightSibling) this.rightSibling.traverse(callback, parentTransform);
+    }
+
+    render(parentTransform = mat4()) {
+        this.traverse(node => {
+            if (node.renderFunc) node.renderFunc(node.worldTransform);
+        }, parentTransform);
+    }
+
+    findNode(name) {
+        if (this.name === name) return this;
+        if (this.leftChild) {
+            const found = this.leftChild.findNode(name);
+            if (found) return found;
+        }
+        if (this.rightSibling) return this.rightSibling.findNode(name);
+        return null;
+    }
+}
+
+// Helper functions for common transform operations
+const TransformHelpers = {
+    positionScaleTransform(posX, posY, posZ, scale, pivotX = 0, pivotY = 0, pivotZ = 0) {
+        let m = mat4();
+        m = mult(m, translate(posX, posY, posZ));
+        if (pivotX || pivotY || pivotZ) {
+            m = mult(m, translate(-pivotX, -pivotY, -pivotZ));
+            m = mult(m, this.scaleUniform(scale));
+            m = mult(m, translate(pivotX, pivotY, pivotZ));
+        } else {
+            m = mult(m, this.scaleUniform(scale));
+        }
+        return m;
+    },
+    
+    scaleUniform(s) {
+        return scale(s, s, s);
+    },
+    
+    rotateAroundPivot(angle, axis, pivotX, pivotY, pivotZ) {
+        let m = mat4();
+        m = mult(m, translate(pivotX, pivotY, pivotZ));
+        m = mult(m, rotate(angle, axis));
+        m = mult(m, translate(-pivotX, -pivotY, -pivotZ));
+        return m;
+    }
+};
+
+// Helper for rendering geometry
+const RenderHelpers = {
+    drawGeometry(worldTransform, indexCount, indexStart, wireframe) {
+        RenderingSystem.setModelViewMatrix(worldTransform);
+        RenderingSystem.drawElements(indexCount, indexStart, wireframe);
+    },
+    
+    drawMultipleGeometry(worldTransform, geometryParts, wireframe) {
+        RenderingSystem.setModelViewMatrix(worldTransform);
+        geometryParts.forEach(part => {
+            RenderingSystem.drawElements(part.count, part.start, wireframe);
+        });
+    }
+};
+
+/**
+ * Global scene graph root
+ */
+let sceneGraph = null;
+
+/**
+ * Initialize the scene graph with LCRS structure
+ */
+function initializeSceneGraph() {
+    const wireframeMode = () => get('wireframe-mode').checked;
+    
+    // Root node
+    sceneGraph = new SceneNode('World', null, () => mat4());
+    
+    // === TABLE NODE ===
+    const tableNode = new SceneNode('Table',
+        (wt) => RenderingSystem.drawTable(wt, wireframeMode()),
+        () => TransformHelpers.positionScaleTransform(
+            parseFloat(get('table-pos-x').value),
+            parseFloat(get('table-pos-y').value),
+            parseFloat(get('table-pos-z').value),
+            parseFloat(get('table-scale').value)
+        )
+    );
+    
+    // === MONITOR NODES ===
+    const monitorNode = new SceneNode('Monitor', null, () => 
+        TransformHelpers.positionScaleTransform(
+            parseFloat(get('position-x').value),
+            parseFloat(get('position-y').value),
+            parseFloat(get('position-z').value),
+            parseFloat(get('scale').value),
+            scalePivotX, scalePivotY, scalePivotZ
+        )
+    );
+    
+    const monitorScreenNode = new SceneNode('MonitorScreen',
+        (wt) => RenderHelpers.drawGeometry(wt, screenIndexCount, 0, wireframeMode()),
+        () => TransformHelpers.rotateAroundPivot(
+            parseFloat(get('tilt-angle').value),
+            vec3(1, 0, 0),
+            screenPivotX, screenPivotY, screenPivotZ
+        )
+    );
+    
+    const monitorBaseNode = new SceneNode('MonitorBase',
+        (wt) => RenderHelpers.drawGeometry(wt, monitorIndexCount - screenIndexCount, screenIndexCount, wireframeMode()),
+        () => mat4()
+    );
+    
+    monitorNode.addChild(monitorScreenNode).addChild(monitorBaseNode);
+    
+    // === MOUSE NODES ===
+    const mouseNode = new SceneNode('Mouse', null, () => {
+        const mx = parseFloat(get('mouse-pos-x').value);
+        const my = parseFloat(get('mouse-pos-y').value);
+        const mz = parseFloat(get('mouse-pos-z').value);
+        const ms = parseFloat(get('mouse-scale').value);
+        
+        let m = mat4();
+        m = mult(m, translate(mx, my, mz));
+        m = mult(m, rotate(180, vec3(0, 1, 0)));
+        m = mult(m, rotate(15, vec3(0, 1, 0)));
+        m = mult(m, TransformHelpers.scaleUniform(ms));
+        return m;
+    });
+    
+    const mouseBodyNode = new SceneNode('MouseBody',
+        (wt) => RenderHelpers.drawMultipleGeometry(wt, [
+            { count: mouseBaseIndexCount, start: mouseBaseIndexStart },
+            { count: mouseBodyIndexCount, start: mouseBodyIndexStart },
+            { count: mousePalmIndexCount, start: mousePalmIndexStart }
+        ], wireframeMode()),
+        () => mat4()
+    );
+    
+    const mouseLeftButtonNode = new SceneNode('MouseLeftButton',
+        (wt) => {
+            let offset = 0;
+            if (mouseLeftClickAnimating) {
+                mouseLeftClickTime += 0.016;
+                if (mouseLeftClickTime >= CONFIG.mouse.clickDuration) {
+                    mouseLeftClickAnimating = false;
+                    mouseLeftClickTime = 0;
+                }
+                offset = Math.sin((mouseLeftClickTime / CONFIG.mouse.clickDuration) * Math.PI) * CONFIG.mouse.clickDepth;
+            }
+            const btnTransform = mult(wt, translate(0, -offset, 0));
+            RenderHelpers.drawGeometry(btnTransform, mouseLeftIndexCount, mouseLeftIndexStart, wireframeMode());
+        },
+        () => mat4()
+    );
+    
+    const mouseRightButtonNode = new SceneNode('MouseRightButton',
+        (wt) => {
+            let offset = 0;
+            if (mouseRightClickAnimating) {
+                mouseRightClickTime += 0.016;
+                if (mouseRightClickTime >= CONFIG.mouse.clickDuration) {
+                    mouseRightClickAnimating = false;
+                    mouseRightClickTime = 0;
+                }
+                offset = Math.sin((mouseRightClickTime / CONFIG.mouse.clickDuration) * Math.PI) * CONFIG.mouse.clickDepth;
+            }
+            const btnTransform = mult(wt, translate(0, -offset, 0));
+            RenderHelpers.drawGeometry(btnTransform, mouseRightIndexCount, mouseRightIndexStart, wireframeMode());
+        },
+        () => mat4()
+    );
+    
+    const mouseScrollWheelNode = new SceneNode('MouseScrollWheel',
+        (wt) => {
+            if (mouseScrollActive) mouseWheelAngle += 180 * 0.016;
+            
+            const wheelTransform = mult(wt, 
+                TransformHelpers.rotateAroundPivot(
+                    mouseWheelAngle, 
+                    vec3(1, 0, 0),
+                    mouseWheelPivot[0], mouseWheelPivot[1], mouseWheelPivot[2]
+                )
+            );
+            RenderHelpers.drawGeometry(wheelTransform, mouseWheelIndexCount, mouseWheelIndexStart, wireframeMode());
+        },
+        () => mat4()
+    );
+    
+    // Build mouse hierarchy
+    mouseNode.addChild(mouseBodyNode)
+             .addChild(mouseLeftButtonNode)
+             .addChild(mouseRightButtonNode)
+             .addChild(mouseScrollWheelNode);
+    
+    // Build scene hierarchy: World -> Table -> (Monitor, Mouse)
+    tableNode.addChild(monitorNode).addChild(mouseNode);
+    sceneGraph.addChild(tableNode);
+    
+    return sceneGraph;
+}
+
+/**
+ * ============================================================================
+ * TEXTURE LOADING SYSTEM
+ * ============================================================================
+ */
+
+//Loads an image texture into WebGL.
 function loadTexture(gl, url, flipY = false) {
     const texture = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -120,49 +454,90 @@ function isPowerOf2(value) {
     return (value & (value - 1)) == 0;
 }
 
-init();
+/**
+ * ============================================================================
+ * UTILITY FUNCTIONS
+ * ============================================================================
+ * Helper functions to reduce code duplication and improve readability.
+ */
+
+function updateSlider(sliderId, value, decimals = 2) {
+    const slider = document.getElementById(sliderId);
+    const span = document.getElementById(`${sliderId}-value`);
+    if (slider && span) {
+        const formattedValue = value.toFixed(decimals);
+        slider.value = formattedValue;
+        span.textContent = formattedValue;
+    }
+}
+
+function hexToRgb(hex) {
+    const bigint = parseInt(hex.slice(1), 16);
+    return [(bigint >> 16) & 255, (bigint >> 8) & 255, bigint & 255].map(c => c / 255);
+}
+
+function get(id) {
+    return document.getElementById(id);
+}
+
+/**
+ * ============================================================================
+ * INITIALIZATION SYSTEM
+ * ============================================================================
+ */
 
 function init() {
-    canvas = document.getElementById("gl-canvas");
-    gl = canvas.getContext('webgl2');
-    if (!gl) alert("WebGL 2.0 isn't available");
+    initializeWebGL();
+    loadInitialValues();
+    createGeometry();
+    setupBuffers();
+    loadTextures();
+    setupUniforms();
+    initializeSphericalCoords();
+    initializeSceneGraph();  
+    setupEventListeners();
+    updateProjectionMatrix();
+    updateProjectionUI();
+    render();
+}
 
+function initializeWebGL() {
+    canvas = get("gl-canvas");
+    gl = canvas.getContext('webgl2');
+    if (!gl) {
+        alert("WebGL 2.0 isn't available");
+        return;
+    }
     gl.clearColor(1, 1, 1, 1);
     gl.enable(gl.DEPTH_TEST);
-
     program = initShaders(gl, "vertex-shader", "fragment-shader");
     gl.useProgram(program);
+}
 
-    // Ambil nilai awal mouse dari slider HTML
-    mousePosX = parseFloat(document.getElementById('mouse-pos-x').value);
-    mousePosZ = parseFloat(document.getElementById('mouse-pos-z').value);
+function loadInitialValues() {
+    mousePosX = parseFloat(get('mouse-pos-x').value);
+    mousePosZ = parseFloat(get('mouse-pos-z').value);
+}
 
-    // Hierarchy loading
-    // 1. Buat Monitor (Screen + Stand)
+function createGeometry() {
     createMonitor();
-    monitorIndexCount = indices.length; 
+    monitorIndexCount = indices.length;
     
-    // 2. Buat Meja
     createTable();
     tableIndexCount = indices.length - monitorIndexCount;
     
-    // 3. Buat Mouse (HANYA BADAN)
     createMouse();
     mouseIndexCount = indices.length - monitorIndexCount - tableIndexCount;
-    
-    // 4. (Tidak ada kabel terpisah)
-    // ---
+}
 
-    setupBuffers();
-
-    // Load textures
-    checkerboardTexture = loadTexture(gl, 'checkerboard.jpg', false);
+function loadTextures() {
     wallpaperTexture = loadTexture(gl, 'wallpaper.jpg', true);
+}
 
+function setupUniforms() {
     modelViewMatrixLoc = gl.getUniformLocation(program, "modelViewMatrix");
     projectionMatrixLoc = gl.getUniformLocation(program, "projectionMatrix");
     
-    // Get lighting uniform locations
     lightingUniforms = {
         enableLighting: gl.getUniformLocation(program, "enableLighting"),
         lightPosition: gl.getUniformLocation(program, "lightPosition"),
@@ -174,199 +549,250 @@ function init() {
         specularStrength: gl.getUniformLocation(program, "specularStrength"),
         normalMatrix: gl.getUniformLocation(program, "normalMatrix"),
         useTextures: gl.getUniformLocation(program, "useTextures"),
-        checkerboardTexture: gl.getUniformLocation(program, "checkerboardTexture"),
         wallpaperTexture: gl.getUniformLocation(program, "wallpaperTexture")
     };
-    
-    initializeSphericalCoords();
-    setupEventListeners();
-    
-    // Initialize projection matrix and UI
-    updateProjectionMatrix();
-    updateProjectionUI();
-    
-    render();
 }
 
-// Table geometry
+/**
+ * ============================================================================
+ * 3D MODEL CREATION - TABLE
+ * ============================================================================
+ */
 function createTable() {
-    
-    const darkWoodColor = vec4(0.3, 0.2, 0.15, 1.0); 
-    const whitePanelColor = vec4(0.95, 0.95, 0.95, 1.0);
-    const bodyShininess = 3.0;
+    // === MATERIAL COLORS ===
+    const darkWoodColor = vec4(0.3, 0.2, 0.15, 1.0);   
+    const whitePanelColor = vec4(0.95, 0.95, 0.95, 1.0); 
+    const bodyShininess = 3.0;  
 
-    // Dimensi Atas Meja
+    // === TABLE TOP DIMENSIONS ===
     const tableTopWidth = 2.0;
     const tableTopHeight = 0.05;
     const tableTopDepth = 1.0;
-    const tableTopY = -0.29 - (tableTopHeight / 2); // Center Y = -0.315
+    const tableTopY = -0.29 - (tableTopHeight / 2); 
     
-    // Dimensi Panel Kaki Samping (Tebal, menghadap samping)
-    const panelHeight = 0.7; // TINGGI PENUH KAKI
-    const panelY = tableTopY - (tableTopHeight / 2) - (panelHeight / 2); // Center Y = -0.69
-    const sidePanelThickness = 0.04; // tebal di X
-    const sidePanelDepth = 0.9;      // dalam di Z
-    const sidePanelXOffset = (tableTopWidth / 2) - (sidePanelThickness / 2) - 0.05; // 0.93
+    // === SIDE PANEL (LEG) DIMENSIONS ===
+    // Thick vertical panels on left and right sides
+    const panelHeight = 0.7; 
+    const panelY = tableTopY - (tableTopHeight / 2) - (panelHeight / 2); 
+    const sidePanelThickness = 0.04; 
+    const sidePanelDepth = 0.9;    
+    const sidePanelXOffset = (tableTopWidth / 2) - (sidePanelThickness / 2) - 0.05; 
 
-    // 1. Permukaan Atas Meja (Coklat Tua)
+    // 1. Tabletop Surface (dark wood)
     createCubeWithShininess(tableTopWidth, tableTopHeight, tableTopDepth, darkWoodColor, 0, tableTopY, 0, bodyShininess);
     
-    // 2. Panel Kaki Kiri (Coklat Tua, menghadap samping)
+    // 2. Left Side Panel/Leg (dark wood, facing sideways)
     createCubeWithShininess(sidePanelThickness, panelHeight, sidePanelDepth, darkWoodColor, -sidePanelXOffset, panelY, 0, bodyShininess); 
     
-    // 3. Panel Kaki Kanan (Coklat Tua, menghadap samping)
+    // 3. Right Side Panel/Leg (dark wood, facing sideways)
     createCubeWithShininess(sidePanelThickness, panelHeight, sidePanelDepth, darkWoodColor, sidePanelXOffset, panelY, 0, bodyShininess);
     
-    // Front panels
-    const frontPanelThickness = 0.02; // KETEBALAN TIPIS di Z (untuk panel putih & coklat)
-    const frontPanelZ = (-sidePanelDepth / 2) + 0.1 + (frontPanelThickness / 2); // -0.34
+    // === FRONT PANELS ===
+    const frontPanelThickness = 0.02;
+    const frontPanelZ = (-sidePanelDepth / 2) + 0.1 + (frontPanelThickness / 2); 
     
-    // Tepi dalam panel kiri
-    const leftInnerEdge = -sidePanelXOffset + (sidePanelThickness / 2); // -0.91
-    // Tepi dalam panel kanan
-    const rightInnerEdge = sidePanelXOffset - (sidePanelThickness / 2); // 0.91
-    
-    // Hitung total lebar ruang antar kaki
-    const totalInnerWidth = rightInnerEdge - leftInnerEdge; // 0.91 - (-0.91) = 1.82
+    // Calculate inner edges of side panels
+    const leftInnerEdge = -sidePanelXOffset + (sidePanelThickness / 2);
+    const rightInnerEdge = sidePanelXOffset - (sidePanelThickness / 2);
+    const totalInnerWidth = rightInnerEdge - leftInnerEdge; 
 
-    // 4. Panel Putih (Horizontal, Pendek)
+    // 4. White Horizontal Panel (drawer/storage appearance)
     const whitePanelWidth = 1.2;
-    const whitePanelHeight = panelHeight * 0.9; // Sedikit lebih pendek dari tinggi penuh
-    const whitePanelY = panelY - (panelHeight - whitePanelHeight) / 2; // Posis Y sedikit ke atas
+    const whitePanelHeight = panelHeight * 0.9;
+    const whitePanelY = panelY - (panelHeight - whitePanelHeight) / 2; 
+    const whitePanelCenterX = leftInnerEdge + (whitePanelWidth / 2);
     
-    const whitePanelCenterX = leftInnerEdge + (whitePanelWidth / 2); // -0.91 + 0.6 = -0.31
     createCubeWithShininess(
-        whitePanelWidth,      // Lebar (Horizontal)
-        whitePanelHeight,     // Tinggi (Pendek)
-        frontPanelThickness,  // Kedalaman (Tipis)
+        whitePanelWidth,      // Width (horizontal)
+        whitePanelHeight,     // Height (short)
+        frontPanelThickness,  // Depth (thin)
         whitePanelColor,
-        whitePanelCenterX,    // X
-        whitePanelY,          // Y (Agak ke atas)
-        frontPanelZ,          // Z (Di depan)
+        whitePanelCenterX,
+        whitePanelY,
+        frontPanelZ,
         bodyShininess
     );
     
-    // 5. Panel Sekat Coklat (Vertikal, Penuh, Tipis)
-    // Hitung sisa lebar yang harus diisi oleh panel coklat
-    const brownPanelWidth = totalInnerWidth - whitePanelWidth; // 1.82 - 1.2 = 0.62
-    
-    // Tepi kanan panel putih
-    const whitePanelRightEdge = whitePanelCenterX + (whitePanelWidth / 2); // 0.29
-    
-    // Center X-nya
-    const brownPanelCenterX = whitePanelRightEdge + (brownPanelWidth / 2); // 0.29 + (0.62 / 2) = 0.60
+    // 5. Brown Vertical Divider Panel (fills remaining space)
+    const brownPanelWidth = totalInnerWidth - whitePanelWidth; 
+    const whitePanelRightEdge = whitePanelCenterX + (whitePanelWidth / 2);
+    const brownPanelCenterX = whitePanelRightEdge + (brownPanelWidth / 2);
     
     createCubeWithShininess(
-        brownPanelWidth,       // Lebar (0.62, hasil hitungan)
-        panelHeight,           // Tinggi (PENUH, 0.7, sama dgn kaki)
-        frontPanelThickness,   // Kedalaman (TIPIS, 0.02, sama dgn putih)
-        darkWoodColor,         // Warna coklat
-        brownPanelCenterX,     // X (Sebelah putih, 0.60)
-        panelY,                // Y (Center sama dgn kaki)
-        frontPanelZ,           // Z (Di depan, sama dgn putih)
+        brownPanelWidth,       // Width (calculated to fill space)
+        panelHeight,           // Height (full, matches legs)
+        frontPanelThickness,   // Depth (thin, matches white panel)
+        darkWoodColor,         
+        brownPanelCenterX,
+        panelY,              
+        frontPanelZ,
         bodyShininess
     );
 }
-// ---
 
-// Mouse geometry
+/**
+ * ============================================================================
+ * 3D MODEL CREATION - COMPUTER MOUSE
+ * ============================================================================
+ * Creates a realistic wireless mouse model inspired by modern ergonomic designs.
+ * Features smooth, curved body with tapered front, integrated left/right buttons,
+ * and a center scroll wheel.
+ */
 function createMouse() {
-    const mouseColor = vec4(0.1, 0.1, 0.1, 1.0);
-    const wheelColor = vec4(0.2, 0.2, 0.2, 1.0);
-    const mouseShininess = 10.0;
+    // === MATERIAL PROPERTIES ===
+    const mouseBodyColor = vec4(0.15, 0.15, 0.15, 1.0);      // Dark gray body
+    const mouseButtonColor = vec4(0.12, 0.12, 0.12, 1.0);    // Slightly darker buttons
+    const wheelColor = vec4(0.08, 0.08, 0.08, 1.0);          // Even darker wheel
+    const seamColor = vec4(0.05, 0.05, 0.05, 1.0);           // Dark seam line
+    const mouseShininess = 15.0;                              // Matte plastic finish
 
-    // Model mouse dibuat dari tumpukan 4 kubus
-    // Semua Y dihitung dari 0 (alas)
+    // === OVERALL MOUSE DIMENSIONS ===
+    const mouseLength = 0.12;      // Front to back
+    const mouseWidth = 0.07;       // Left to right
+    const mouseMaxHeight = 0.035;  // Peak height at palm rest
+    const baseY = 0;               // Ground level
+
+    // === BOTTOM BASE (Foundation) ===
+    // Wider, flatter base that sits on table
+    const baseHeight = 0.006;
+    const baseWidth = mouseWidth;
+    const baseDepth = mouseLength * 0.95;
     
-    // 1. Alas (paling bawah, paling besar)
-    const baseHeight = 0.005;
-    const baseY = 0;
-    const baseWidth = 0.08;
-    const baseDepth = 0.12;
     let idxStart = indices.length;
-    createCubeWithShininess(baseWidth, baseHeight, baseDepth, mouseColor, 0, baseY + baseHeight/2, 0, mouseShininess);
+    createCubeWithShininess(baseWidth, baseHeight, baseDepth, mouseBodyColor, 0, baseY + baseHeight/2, 0, mouseShininess);
     mouseBaseIndexStart = idxStart;
     mouseBaseIndexCount = indices.length - idxStart;
 
-    // 2. Badan (tengah)
-    const bodyHeight = 0.01;
-    const bodyY = baseY + baseHeight;
-    const bodyWidth = 0.075;
-    const bodyDepth = 0.11;
+    // === MAIN BODY - LOWER SECTION ===
+    // Slightly narrower than base, adds ergonomic curve
+    const lowerBodyHeight = 0.012;
+    const lowerBodyY = baseY + baseHeight;
+    const lowerBodyWidth = mouseWidth * 0.92;
+    const lowerBodyDepth = mouseLength * 0.90;
+    
     idxStart = indices.length;
-    createCubeWithShininess(bodyWidth, bodyHeight, bodyDepth, mouseColor, 0, bodyY + bodyHeight/2, 0, mouseShininess);
+    createCubeWithShininess(lowerBodyWidth, lowerBodyHeight, lowerBodyDepth, mouseBodyColor, 0, lowerBodyY + lowerBodyHeight/2, -0.005, mouseShininess);
     mouseBodyIndexStart = idxStart;
     mouseBodyIndexCount = indices.length - idxStart;
+
+    // === MAIN BODY - MIDDLE SECTION ===
+    // Continues the curve upward, narrower still
+    const midBodyHeight = 0.010;
+    const midBodyY = lowerBodyY + lowerBodyHeight;
+    const midBodyWidth = mouseWidth * 0.85;
+    const midBodyDepth = mouseLength * 0.82;
     
-    const palmHeight = 0.01;
-    const palmY = bodyY + bodyHeight;
-    const palmWidth = 0.07;
-    const palmDepth = 0.06; // made the palm a bit shorter (reduced depth)
-    // create palm (rear/top of mouse)
+    createCubeWithShininess(midBodyWidth, midBodyHeight, midBodyDepth, mouseBodyColor, 0, midBodyY + midBodyHeight/2, -0.010, mouseShininess);
+
+    // === BUTTON AREA SETUP ===
+    // Buttons cover the front portion, from mid-body up
+    const buttonBaseY = midBodyY;
+    const buttonHeight = 0.008;
+    
+    // === PALM REST AREA (Same height as buttons) ===
+    // Back section where palm rests, now aligned with button height
+    const palmHeight = buttonHeight;  // Match button height to avoid floating
+    const palmY = buttonBaseY;         // Same base Y as buttons
+    const palmWidth = mouseWidth * 0.75;
+    const palmDepth = mouseLength * 0.40;  // Rear 40% of mouse
+    const palmZOffset = -mouseLength * 0.25;  // Position toward back
+    
     mousePalmIndexStart = indices.length;
-    createCubeWithShininess(palmWidth, palmHeight, palmDepth, mouseColor, 0, palmY + palmHeight/2, -0.02, mouseShininess);
+    createCubeWithShininess(palmWidth, palmHeight, palmDepth, mouseBodyColor, 0, palmY + palmHeight/2, palmZOffset, mouseShininess);
     mousePalmIndexCount = indices.length - mousePalmIndexStart;
-    idxStart = indices.length;
-    // Make the scroll wheel thinner while making the clickable buttons wider
-    const wheelNominalW = 0.012; // thinner wheel
-    const btnWidth = 0.025; // wider click regions (longer)
-    const btnDepth = 0.03; // extend button depth a bit
-    const btnHeight = palmHeight; // same height as palm
-    const btnZ = 0.04; // flank the scroll wheel at same Z
-    const btnGap = 0.003; // slightly larger gap between wheel and buttons
-    const leftOffsetX = -(btnWidth / 2 + wheelNominalW / 2 + btnGap); // left of wheel
-    const rightOffsetX = -leftOffsetX; // symmetric
+    const buttonTopY = buttonBaseY + buttonHeight;
+    const buttonDepth = mouseLength * 0.55;  // Front 55% of mouse
+    const buttonZOffset = mouseLength * 0.15;  // Position toward front
+    
+    // === CENTER SEAM (Visual divider between buttons) ===
+    // Thin vertical strip down the center
+    const seamWidth = 0.002;
+    const seamDepth = buttonDepth * 0.7;  // Doesn't extend all the way
+    const seamZOffset = buttonZOffset + buttonDepth * 0.05;
+    
+    createCubeWithShininess(seamWidth, buttonHeight, seamDepth, seamColor, 0, buttonBaseY + buttonHeight/2, seamZOffset, mouseShininess * 0.5);
 
-    // left button
+    // === LEFT BUTTON ===
+    // Left half of the button area
+    const btnWidth = (mouseWidth * 0.85) / 2 - seamWidth/2 - 0.001;  // Half width minus seam
+    const leftBtnX = -btnWidth/2 - seamWidth/2 - 0.001;
+    
     mouseLeftIndexStart = indices.length;
-    createCubeWithShininess(btnWidth, btnHeight, btnDepth, mouseColor, leftOffsetX, palmY + palmHeight/2, btnZ, mouseShininess);
+    createCubeWithShininess(btnWidth, buttonHeight, buttonDepth, mouseButtonColor, leftBtnX, buttonBaseY + buttonHeight/2, buttonZOffset, mouseShininess);
     mouseLeftIndexCount = indices.length - mouseLeftIndexStart;
-    mouseLeftPivot = vec3(leftOffsetX, palmY + palmHeight/2, btnZ);
+    mouseLeftPivot = vec3(leftBtnX, buttonBaseY + buttonHeight/2, buttonZOffset);
 
-    // right button
+    // === RIGHT BUTTON ===
+    // Right half of the button area
+    const rightBtnX = btnWidth/2 + seamWidth/2 + 0.001;
+    
     mouseRightIndexStart = indices.length;
-    createCubeWithShininess(btnWidth, btnHeight, btnDepth, mouseColor, rightOffsetX, palmY + palmHeight/2, btnZ, mouseShininess);
+    createCubeWithShininess(btnWidth, buttonHeight, buttonDepth, mouseButtonColor, rightBtnX, buttonBaseY + buttonHeight/2, buttonZOffset, mouseShininess);
     mouseRightIndexCount = indices.length - mouseRightIndexStart;
-    mouseRightPivot = vec3(rightOffsetX, palmY + palmHeight/2, btnZ);
+    mouseRightPivot = vec3(rightBtnX, buttonBaseY + buttonHeight/2, buttonZOffset);
 
-    // 4. Scroll Wheel (mencuat dari badan)
-    const wheelHeight = 0.015;
-    const wheelY = bodyY + wheelHeight/2; // Mencuat dari lapisan badan
-    const wheelZ = 0.04; // Posisi Z wheel
-    idxStart = indices.length;
-    // create a wider wheel to match the longer click/scroll region
-    createCubeWithShininess(wheelNominalW, wheelHeight, wheelNominalW, wheelColor, 0, wheelY, wheelZ, mouseShininess);
-    mouseWheelIndexStart = idxStart;
-    mouseWheelIndexCount = indices.length - idxStart;
-    // store wheel pivot (local mouse coordinates)
+    // === SCROLL WHEEL ===
+    // Longer, thin wheel positioned at top center between buttons
+    const wheelWidth = 0.008;
+    const wheelHeight = 0.012;
+    const wheelDepth = 0.025;  // Made longer for more realistic appearance
+    const wheelY = buttonBaseY + buttonHeight + wheelHeight * 0.3;  // Slightly protruding above buttons
+    const wheelZ = buttonZOffset + buttonDepth * 0.15;  // Front-center position
+    
+    mouseWheelIndexStart = indices.length;
+    createCubeWithShininess(wheelWidth, wheelHeight, wheelDepth, wheelColor, 0, wheelY, wheelZ, mouseShininess * 0.7);
+    mouseWheelIndexCount = indices.length - mouseWheelIndexStart;
     mouseWheelPivot = vec3(0, wheelY, wheelZ);
 
-    // 5. Kabel dihapus
+    // === FRONT TAPER (Nose of mouse) ===
+    // Narrow, rounded front section for ergonomic shape
+    const noseWidth = mouseWidth * 0.60;
+    const noseHeight = 0.006;
+    const noseDepth = mouseLength * 0.18;
+    const noseY = lowerBodyY + lowerBodyHeight/2;
+    const noseZ = mouseLength * 0.42;
+    
+    createCubeWithShininess(noseWidth, noseHeight, noseDepth, mouseBodyColor, 0, noseY, noseZ, mouseShininess);
+
+    // === SIDE CONTOURS (Optional detail) ===
+    // Subtle side panels for additional depth
+    const sideWidth = mouseWidth * 0.82;
+    const sideHeight = 0.005;
+    const sideDepth = mouseLength * 0.50;
+    const sideY = lowerBodyY + lowerBodyHeight/2;
+    
+    createCubeWithShininess(sideWidth, sideHeight, sideDepth, mouseBodyColor, 0, sideY, 0.01, mouseShininess);
 }
-// ----------------------------------------
 
-// Fungsi createMouseCable() dihapus
-
-
+/**
+ * ============================================================================
+ * 3D MODEL CREATION - MONITOR
+ * ============================================================================
+ */
 function createMonitor() {
-    const bezelColor = vec4(0.2, 0.2, 0.2, 1.0);
-    const panelColor = vec4(0.05, 0.05, 0.05, 1.0);
-    const standColor = vec4(0.18, 0.18, 0.18, 1.0);
-    const baseColor = vec4(0.18, 0.18, 0.18, 1.0);
+    // === MATERIAL COLORS ===
+    const bezelColor = vec4(0.2, 0.2, 0.2, 1.0);    
+    const panelColor = vec4(0.05, 0.05, 0.05, 1.0); 
+    const standColor = vec4(0.18, 0.18, 0.18, 1.0); 
+    const baseColor = vec4(0.18, 0.18, 0.18, 1.0); 
 
-    const screenShininess = 20.0;
-    const bodyShininess = 5.0;
+    // === MATERIAL SHININESS ===
+    const screenShininess = 50.0;
+    const bodyShininess = 5.0;   
 
-    const screenWidth = 0.7
-    const screenHeight = 0.42
-    const screenDepthFront = 0.02
-    const screenDepthBack = 0.05
-    const yOffset = 0.15
+    // === SCREEN DIMENSIONS ===
+    const screenWidth = 0.7;
+    const screenHeight = 0.42;
+    const screenDepthFront = 0.02;
+    const screenDepthBack = 0.05;
+    const yOffset = 0.15; 
 
-    const sideThickness = 0.002
-    const frameDepth = screenDepthFront - 0.005
+    // === BEZEL (FRAME) DIMENSIONS ===
+    const sideThickness = 0.002;
+    const frameDepth = screenDepthFront - 0.005;
     const frameCenterZ = (screenDepthFront - screenDepthBack) / 2 + 0.02;
 
+    // LEFT BEZEL (Side frame)
     createCubeWithShininess(
         sideThickness, screenHeight - 0.005, 
         frameDepth, 
@@ -375,6 +801,8 @@ function createMonitor() {
         yOffset, 
         frameCenterZ,
         bodyShininess);
+    
+    // RIGHT BEZEL (Side frame)
     createCubeWithShininess(
         sideThickness, 
         screenHeight - 0.005, 
@@ -384,6 +812,8 @@ function createMonitor() {
         yOffset, 
         frameCenterZ,
         bodyShininess);
+    
+    // FRONT BEZEL (Outer frame face)
     createCubeFaceWithShininess(
         screenWidth, 
         screenHeight, 
@@ -393,6 +823,9 @@ function createMonitor() {
         yOffset, 
         0,
         bodyShininess);
+    
+    // DISPLAY PANEL (Textured screen surface)
+    // This is where the wallpaper texture will be mapped
     createCubeFaceWithShininess(
         screenWidth * 0.92, 
         screenHeight * 0.88, 
@@ -422,6 +855,8 @@ function createMonitor() {
         0.005,
         bodyShininess
     );
+    
+    // BOTTOM BEZEL (Frame bottom edge)
     createCubeWithShininess(
         screenWidth,
         0.01,
@@ -433,102 +868,125 @@ function createMonitor() {
         bodyShininess
     );
 
-    const standHeight = 0.2
+    // === MONITOR STAND ===
+    const standHeight = 0.2;
     const standYPos = yOffset - (screenHeight / 2) - (standHeight / 2);
 
-    // Tandai semua geometri sejauh ini sebagai bagian dari grup tilt (screen/frame)
+    // Mark all geometry up to this point as part of the tilt group (screen/frame)
+    // This allows the screen to tilt independently while stand remains fixed
     screenIndexCount = indices.length;
-    // Tentukan pivot tilt
+    
+    // Define tilt pivot point (at bottom of screen where it connects to stand)
     screenPivotX = 0;
     screenPivotY = standYPos + (standHeight / 2);
     screenPivotZ = 0;
 
-    // --- Mulai Geometri Stand/Base (NON-TILT) ---
+    // === STAND AND BASE (NON-TILTABLE) ===
+    // These components do not tilt with the screen
+    
+    // Vertical stand support (box with hole for cable management)
     createBoxWithHoleAndShininess(
-        0.2, 
-        0.35, 
-        0.03, 
-        0.05, 
+        0.2,  // Width
+        0.35, // Height
+        0.03, // Depth
+        0.05, // Hole size
         standColor, 
         standColor, 
-        0, 
+        0,    // X position
         standYPos + (standHeight / 2) - 0.05, 
-        -screenDepthBack * 1.7, 
-        -20, 
-        0, 
-        0, 
-        50,
+        -screenDepthBack * 1.7,  // Z position (behind screen)
+        -20,  // Rotation X
+        0,    // Rotation Y
+        0,    // Rotation Z
+        50,   // Segment count
         bodyShininess
     );
 
-    const baseYPos = standYPos - (standHeight / 2) - 0.015; // Ini sekitar -0.275
-    // Y-bottom dari base ini adalah -0.275 - (0.03 / 2) = -0.29
+    // Base/foot (rectangular platform that sits on table)
+    const baseYPos = standYPos - (standHeight / 2) - 0.015; // Approximately -0.275
+    // Bottom of base: -0.275 - (0.03 / 2) = -0.29
     createCubeWithShininess(
-        0.4, 
-        0.03, // Tinggi base
-        0.3, 
+        0.4,  // Width
+        0.03, // Height of base
+        0.3,  // Depth
         baseColor, 
-        0, 
+        0,    // X position
         baseYPos, 
-        -screenDepthBack * 0.5,
+        -screenDepthBack * 0.5,  // Z position
         bodyShininess
     );
 
-    // Tentukan pivot untuk skala monitor (anchor di kaki / foot)
-    // scalePivotY harus menunjuk ke posisi paling bawah dari base (world/model space)
+    // Define scale pivot point (anchor at bottom of base/foot for uniform scaling)
+    // scalePivotY points to the bottommost position of the base (world/model space)
     scalePivotX = 0;
-    // base tinggi = 0.03, jadi bottom = baseYPos - 0.03/2
-    scalePivotY = baseYPos - (0.03 / 2);
-    // gunakan Z center dari base sebagai pivot Z
-    scalePivotZ = -screenDepthBack * 0.5;
+    scalePivotY = baseYPos - (0.03 / 2); // Bottom edge of base
+    scalePivotZ = -screenDepthBack * 0.5; // Z center of base
 }
 
+/**
+ * ============================================================================
+ * GEOMETRY PRIMITIVE - CUBE WITH SHININESS
+ * ============================================================================
+
+ */
 function createCubeWithShininess(width, height, depth, color, cx, cy, cz, shininess) {
     const w = width / 2, h = height / 2, d = depth / 2;
     
+    // Face normals for Phong lighting (one normal per face)
     const faceNormals = [
-        vec3(0, 0, 1),   // front
-        vec3(0, 0, -1),  // back  
-        vec3(1, 0, 0),   // right
-        vec3(-1, 0, 0),  // left
-        vec3(0, 1, 0),   // top
-        vec3(0, -1, 0)   // bottom
+        vec3(0, 0, 1),   // Front face (+Z)
+        vec3(0, 0, -1),  // Back face (-Z)
+        vec3(1, 0, 0),   // Right face (+X)
+        vec3(-1, 0, 0),  // Left face (-X)
+        vec3(0, 1, 0),   // Top face (+Y)
+        vec3(0, -1, 0)   // Bottom face (-Y)
     ];
     
+    // Vertex positions for each face (counter-clockwise winding)
     const faces = [
-        [vec3(-w + cx, -h + cy, d + cz), vec3(w + cx, -h + cy, d + cz), vec3(w + cx, h + cy, d + cz), vec3(-w + cx, h + cy, d + cz)],
-        [vec3(w + cx, -h + cy, -d + cz), vec3(-w + cx, -h + cy, -d + cz), vec3(-w + cx, h + cy, -d + cz), vec3(w + cx, h + cy, -d + cz)],
-        [vec3(w + cx, -h + cy, d + cz), vec3(w + cx, -h + cy, -d + cz), vec3(w + cx, h + cy, -d + cz), vec3(w + cx, h + cy, d + cz)],
-        [vec3(-w + cx, -h + cy, -d + cz), vec3(-w + cx, -h + cy, d + cz), vec3(-w + cx, h + cy, d + cz), vec3(-w + cx, h + cy, -d + cz)],
-        [vec3(-w + cx, h + cy, d + cz), vec3(w + cx, h + cy, d + cz), vec3(w + cx, h + cy, -d + cz), vec3(-w + cx, h + cy, -d + cz)],
-        [vec3(-w + cx, -h + cy, -d + cz), vec3(w + cx, -h + cy, -d + cz), vec3(w + cx, -h + cy, d + cz), vec3(-w + cx, -h + cy, d + cz)]
+        [vec3(-w + cx, -h + cy, d + cz), vec3(w + cx, -h + cy, d + cz), vec3(w + cx, h + cy, d + cz), vec3(-w + cx, h + cy, d + cz)],  // Front
+        [vec3(w + cx, -h + cy, -d + cz), vec3(-w + cx, -h + cy, -d + cz), vec3(-w + cx, h + cy, -d + cz), vec3(w + cx, h + cy, -d + cz)],  // Back
+        [vec3(w + cx, -h + cy, d + cz), vec3(w + cx, -h + cy, -d + cz), vec3(w + cx, h + cy, -d + cz), vec3(w + cx, h + cy, d + cz)],  // Right
+        [vec3(-w + cx, -h + cy, -d + cz), vec3(-w + cx, -h + cy, d + cz), vec3(-w + cx, h + cy, d + cz), vec3(-w + cx, h + cy, -d + cz)],  // Left
+        [vec3(-w + cx, h + cy, d + cz), vec3(w + cx, h + cy, d + cz), vec3(w + cx, h + cy, -d + cz), vec3(-w + cx, h + cy, -d + cz)],  // Top
+        [vec3(-w + cx, -h + cy, -d + cz), vec3(w + cx, -h + cy, -d + cz), vec3(w + cx, -h + cy, d + cz), vec3(-w + cx, -h + cy, d + cz)]   // Bottom
     ];
     
+    // Texture coordinates for each face (standard 0-1 mapping)
     const faceTexCoords = [
-        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // front
-        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // back
-        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // right
-        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // left
-        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // top
-        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)]  // bottom
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // Front
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // Back
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // Right
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // Left
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)], // Top
+        [vec2(0, 0), vec2(1, 0), vec2(1, 1), vec2(0, 1)]  // Bottom
     ];
     
+    // Build geometry for each face
     faces.forEach((faceVertices, faceIndex) => {
         const startIndex = vertices.length;
         
+        // Add vertex attributes for each vertex in the face
         faceVertices.forEach((vertex, vertexIndex) => {
             vertices.push(vertex);
             vertexColors.push(color);
-            normals.push(faceNormals[faceIndex]);
+            normals.push(faceNormals[faceIndex]);  // Same normal for all vertices in face
             shininessValues.push(shininess);
             texCoords.push(faceTexCoords[faceIndex][vertexIndex]);
         });
         
+        // Create two triangles for each quad face
         indices.push(startIndex, startIndex + 1, startIndex + 2);
         indices.push(startIndex, startIndex + 2, startIndex + 3);
     });
 }
 
+/**
+ * Creates a single front-facing quad (for monitor screen display surface).
+ * Optimized for texture mapping - only creates the visible front face.
+ * 
+ * Used specifically for the monitor's display panel where wallpaper texture is applied.
+ */
 function createCubeFaceWithShininess(width, height, depth, color, cx, cy, cz, shininess) {
     const w = width / 2;
     const h = height / 2;
@@ -788,394 +1246,391 @@ function setupBuffers() {
     gl.enableVertexAttribArray(texCoordLoc);
 }
 
-// Render loop
+/**
+ * ============================================================================
+ * ANIMATION SYSTEM
+ * ============================================================================
+ * Encapsulates all preset animation logic.
+ * Eliminates code duplication by centralizing animation updates.
+ */
+const AnimationSystem = {
+    /**
+     * Animates the monitor screen tilt angle.
+     * Creates a sinusoidal tilting motion.
+     */
+    updateTilt() {
+        const t = 12 * Math.sin(animationTime * 2.0);
+        tiltAngle = t;
+        updateSlider('tilt-angle', tiltAngle, 0);
+    },
+    
+    /**
+     * Animates the table sliding along X-axis.
+     */
+    updateTableSlide() {
+        tablePosX = 1.5 * Math.sin(animationTime * 2.0);
+        updateSlider('table-pos-x', tablePosX, 2);
+    },
+    
+    /**
+     * Animates the monitor sliding in XZ plane.
+     */
+    updateMonitorSlide() {
+        const posX = 0.5 * Math.sin(animationTime * 1.8);
+        const posZ = 0.3 * Math.cos(animationTime * 1.5);
+        updateSlider('position-x', posX, 2);
+        updateSlider('position-z', posZ, 2);
+        return { posX, posZ };
+    },
+    
+    /**
+     * Animates the mouse sliding on table surface.
+     */
+    updateMouseSlide() {
+        mousePosX = 0.5 + 0.3 * Math.sin(animationTime * 1.5);
+        mousePosZ = 0.4 + 0.2 * Math.cos(animationTime * 2.0);
+        updateSlider('mouse-pos-x', mousePosX, 2);
+        updateSlider('mouse-pos-z', mousePosZ, 2);
+    },
+    
+    /**
+     * Combines all animations simultaneously.
+     */
+    updateAllCombined() {
+        this.updateTilt();
+        
+        tablePosX = 1.0 * Math.sin(animationTime * 1.2);
+        updateSlider('table-pos-x', tablePosX, 2);
+        
+        const monitor = {
+            posX: 0.4 * Math.sin(animationTime * 1.5),
+            posZ: 0.2 * Math.cos(animationTime * 1.8)
+        };
+        updateSlider('position-x', monitor.posX, 2);
+        updateSlider('position-z', monitor.posZ, 2);
+        
+        mousePosX = 0.5 + 0.25 * Math.sin(animationTime * 2.0);
+        mousePosZ = 0.3 + 0.15 * Math.cos(animationTime * 2.5);
+        updateSlider('mouse-pos-x', mousePosX, 2);
+        updateSlider('mouse-pos-z', mousePosZ, 2);
+        
+        return monitor;
+    },
+    
+    /**
+     * Main animation update dispatcher.
+     */
+    update(preset) {
+        animationTime += 0.016;
+        
+        switch(preset) {
+            case 'tilt':
+                this.updateTilt();
+                return {};
+            case 'slide_table':
+                this.updateTableSlide();
+                return {};
+            case 'slide_monitor':
+                return this.updateMonitorSlide();
+            case 'slide_mouse':
+                this.updateMouseSlide();
+                return {};
+            case 'all_combined':
+                return this.updateAllCombined();
+            default:
+                return {};
+        }
+    }
+};
+
+/**
+ * ============================================================================
+ * RENDERING SYSTEM
+ * ============================================================================
+ */
+const RenderingSystem = {
+    /**
+     * Sets up all Phong lighting uniforms for the current frame.
+     * Sends lighting parameters to the fragment shader.
+     */
+    setupLightingUniforms() {
+        gl.uniform1i(lightingUniforms.enableLighting, enableLighting);
+        gl.uniform3fv(lightingUniforms.lightPosition, flatten(lightPosition));
+        gl.uniform3fv(lightingUniforms.lightColor, flatten(lightColor));
+        gl.uniform3fv(lightingUniforms.ambientLight, flatten(ambientLight));
+        gl.uniform3fv(lightingUniforms.eyePosition, flatten(vec3(eyeX, eyeY, eyeZ)));
+        gl.uniform1f(lightingUniforms.ambientStrength, ambientStrength);
+        gl.uniform1f(lightingUniforms.diffuseStrength, diffuseStrength);
+        gl.uniform1f(lightingUniforms.specularStrength, specularStrength);
+    },
+    
+    /**
+     * Sets up texture uniforms and binds textures to texture units.
+     */
+    setupTextureUniforms() {
+        gl.uniform1i(lightingUniforms.useTextures, useTextures);
+        gl.activeTexture(gl.TEXTURE0);
+        gl.bindTexture(gl.TEXTURE_2D, wallpaperTexture);
+        gl.uniform1i(lightingUniforms.wallpaperTexture, 0);
+    },
+    
+    /**
+     * Sets model-view matrix and computes/sets normal matrix for lighting.
+     */
+    setModelViewMatrix(matrix) {
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(matrix));
+        const normalMatrix = MatrixBuilder.createNormalMatrix(matrix);
+        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+    },
+    
+    /**
+     * Generic element drawing method supporting wireframe mode.
+     */
+    drawElements(indexCount, indexStart, wireframe) {
+        if (indexCount > 0) {
+            if (wireframe) {
+                for (let i = indexStart; i < indexStart + indexCount; i += 3) {
+                    gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+                }
+            } else {
+                gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_SHORT, indexStart * 2);
+            }
+        }
+    },
+    
+    /**
+     * Draws the table/desk model.
+     */
+    drawTable(mvmTable, wireframe) {
+        this.setModelViewMatrix(mvmTable);
+        const tableIndexStart = monitorIndexCount;
+        this.drawElements(tableIndexCount, tableIndexStart, wireframe);
+    },
+    
+    /**
+     * Draws the computer mouse with all interactive parts.
+     * Handles button press and wheel rotation animations.
+     */
+    drawMouse(mvmMouse, wireframe, leftPressOffset, rightPressOffset) {
+        // Draw mouse base (bottom shell)
+        this.setModelViewMatrix(mvmMouse);
+        this.drawElements(mouseBaseIndexCount, mouseBaseIndexStart, wireframe);
+        
+        // Draw mouse body (main shell)
+        this.setModelViewMatrix(mvmMouse);
+        this.drawElements(mouseBodyIndexCount, mouseBodyIndexStart, wireframe);
+        
+        // Draw mouse palm (rest area)
+        this.setModelViewMatrix(mvmMouse);
+        this.drawElements(mousePalmIndexCount, mousePalmIndexStart, wireframe);
+        
+        // Draw left button with click animation
+        if (mouseLeftIndexCount > 0) {
+            let mvmLeft = mvmMouse;
+            mvmLeft = mult(mvmLeft, translate(mouseLeftPivot[0], mouseLeftPivot[1], mouseLeftPivot[2]));
+            mvmLeft = mult(mvmLeft, translate(0, -leftPressOffset, 0));
+            mvmLeft = mult(mvmLeft, translate(-mouseLeftPivot[0], -mouseLeftPivot[1], -mouseLeftPivot[2]));
+            this.setModelViewMatrix(mvmLeft);
+            this.drawElements(mouseLeftIndexCount, mouseLeftIndexStart, wireframe);
+        }
+        
+        // Draw right button with click animation
+        if (mouseRightIndexCount > 0) {
+            let mvmRight = mvmMouse;
+            mvmRight = mult(mvmRight, translate(mouseRightPivot[0], mouseRightPivot[1], mouseRightPivot[2]));
+            mvmRight = mult(mvmRight, translate(0, -rightPressOffset, 0));
+            mvmRight = mult(mvmRight, translate(-mouseRightPivot[0], -mouseRightPivot[1], -mouseRightPivot[2]));
+            this.setModelViewMatrix(mvmRight);
+            this.drawElements(mouseRightIndexCount, mouseRightIndexStart, wireframe);
+        }
+        
+        // Draw mouse wheel with rotation
+        if (mouseWheelIndexCount > 0) {
+            let mvmWheel = mvmMouse;
+            mvmWheel = mult(mvmWheel, translate(mouseWheelPivot[0], mouseWheelPivot[1], mouseWheelPivot[2]));
+            mvmWheel = mult(mvmWheel, rotate(mouseWheelAngle, vec3(1, 0, 0)));
+            mvmWheel = mult(mvmWheel, translate(-mouseWheelPivot[0], -mouseWheelPivot[1], -mouseWheelPivot[2]));
+            this.setModelViewMatrix(mvmWheel);
+            this.drawElements(mouseWheelIndexCount, mouseWheelIndexStart, wireframe);
+        }
+    },
+    
+    /**
+     * Draws the monitor (screen and stand).
+     */
+    drawMonitor(mvmScreen, mvmBaseMonitor, wireframe) {
+        // Draw screen (textured, can tilt)
+        this.setModelViewMatrix(mvmScreen);
+        this.drawElements(screenIndexCount, 0, wireframe);
+        
+        // Draw monitor stand/base
+        this.setModelViewMatrix(mvmBaseMonitor);
+        const restIndexStart = screenIndexCount;
+        const restIndexCount = monitorIndexCount - screenIndexCount;
+        this.drawElements(restIndexCount, restIndexStart, wireframe);
+    }
+};
+
+/**
+ * ============================================================================
+ * MATRIX BUILDER SYSTEM
+ * ============================================================================
+ * Encapsulates hierarchical transformation matrix construction.
+ */
+const MatrixBuilder = {
+    /**
+     * Creates the view matrix from camera parameters.
+     */
+    createViewMatrix() {
+        const eye = vec3(eyeX, eyeY, eyeZ);
+        const at = vec3(atX, atY, atZ);
+        const up = vec3(upX, upY, upZ);
+        return lookAt(eye, at, up);
+    },
+    
+    /**
+     * Creates table transformation matrix (parent object).
+     * Applies translation and scale with pivot at table surface.
+     */
+    createTableMatrix(viewMatrix) {
+        const tableScale = parseFloat(get('table-scale')?.value) || 1.0;
+        const tableSurfaceY = -0.29;
+        const tablePivotX = 0, tablePivotY = tableSurfaceY, tablePivotZ = 0;
+
+        let matrix = mult(viewMatrix, translate(tablePosX, tablePosY, tablePosZ));
+        matrix = mult(matrix, translate(tablePivotX, tablePivotY, tablePivotZ));
+        matrix = mult(matrix, scale(tableScale, tableScale, tableScale));
+        matrix = mult(matrix, translate(-tablePivotX, -tablePivotY, -tablePivotZ));
+        
+        return matrix;
+    },
+    
+    /**
+     * Creates monitor base transformation matrix (child of table).
+     * Applies translation, scale, and rotation. Scale pivot is at monitor foot.
+     */
+    createMonitorBaseMatrix(tableMatrix, posX, posY, posZ, rotX, rotY, rotZ) {
+        let matrix = tableMatrix;
+        matrix = mult(matrix, translate(posX, posY, posZ));
+
+        const scaleValue = parseFloat(get('scale').value) || 1.0;
+
+        // Apply scale with pivot at monitor base/foot
+        matrix = mult(matrix, translate(scalePivotX, scalePivotY, scalePivotZ));
+        matrix = mult(matrix, scale(scaleValue, scaleValue, scaleValue));
+        matrix = mult(matrix, translate(-scalePivotX, -scalePivotY, -scalePivotZ));
+
+        // Apply rotations (if any)
+        matrix = mult(matrix, rotate(rotZ, vec3(0, 0, 1)));
+        matrix = mult(matrix, rotate(rotY, vec3(0, 1, 0)));
+        matrix = mult(matrix, rotate(rotX, vec3(1, 0, 0)));
+        
+        return matrix;
+    },
+    
+    /**
+     * Creates screen transformation matrix (child of monitor base).
+     * Applies tilt rotation around hinge at bottom of screen.
+     */
+    createScreenMatrix(monitorBaseMatrix) {
+        let matrix = monitorBaseMatrix;
+        matrix = mult(matrix, translate(screenPivotX, screenPivotY, screenPivotZ));
+        matrix = mult(matrix, rotate(tiltAngle, vec3(1, 0, 0)));
+        matrix = mult(matrix, translate(-screenPivotX, -screenPivotY, -screenPivotZ));
+        
+        return matrix;
+    },
+    
+    /**
+     * Creates mouse transformation matrix (child of table).
+     * Positions mouse on table surface with scale and orientation.
+     */
+    createMouseMatrix(tableMatrix) {
+        const tableSurfaceY = -0.29;
+        let matrix = tableMatrix;
+        matrix = mult(matrix, translate(mousePosX, tableSurfaceY + mousePosY, mousePosZ));
+        
+        const mouseScale = parseFloat(get('mouse-scale')?.value) || 1.0;
+        const mousePivotY = 0.01;
+        matrix = mult(matrix, translate(0, mousePivotY, 0));
+        matrix = mult(matrix, scale(mouseScale, mouseScale, mouseScale));
+        matrix = mult(matrix, translate(0, -mousePivotY, 0));
+        
+        // Rotate mouse 180° + 15° for proper orientation
+        matrix = mult(matrix, rotate(180, vec3(0, 1, 0)));
+        matrix = mult(matrix, rotate(15, vec3(0, 1, 0)));
+        
+        return matrix;
+    },
+    
+    /**
+     * Creates normal matrix for proper lighting calculations.
+     */
+    createNormalMatrix(modelViewMatrix) {
+        const inv = inverse(modelViewMatrix);
+        const trs = transpose(inv);
+        return mat3(
+            trs[0][0], trs[0][1], trs[0][2],
+            trs[1][0], trs[1][1], trs[1][2],
+            trs[2][0], trs[2][1], trs[2][2]
+        );
+    }
+};
+
+/**
+ * ============================================================================
+ * RENDER LOOP
+ * ============================================================================
+ */
 function render() {
-    const get = id => document.getElementById(id);
+    // Get background color from UI
     const bgColor = get('bg-color').value;
     
-    // Ambil nilai translasi monitor
+    // Get monitor position from sliders
     let posX = +get('position-x').value;
     let posY = +get('position-y').value; 
     let posZ = +get('position-z').value;
     
-    // Nilai rotasi dan skala monitor sekarang diambil dari nilai default saat slider di-disable
-    // atau nilai terakhir sebelum di-disable. Kita tidak perlu membacanya lagi di sini.
-    // Jika Anda ingin *memaksa* nilai tertentu, set di sini:
-    let rotX = 0, rotY = 0, rotZ = 0; // Nilai default dari HTML
-    
-    
+    // Update animations if active
     if (isAnimating) {
-        animationTime += 0.016;
-         // Animasi Spin, Bounce, Pulse sekarang tidak akan mempengaruhi monitor
-         // karena rotY, posY, scaleValue tidak lagi dibaca dari slider untuk monitor
-        if (animationPreset === 'tilt') {
-            const t = 12 * Math.sin(animationTime * 2.0);
-            tiltAngle = t;
-            get('tilt-angle').value = tiltAngle.toFixed(0);
-            get('tilt-angle-value').textContent = tiltAngle.toFixed(0);
-        } else if (animationPreset === 'slide_table') { // --- ANIMASI GESER MEJA ---
-            tablePosX = 1.5 * Math.sin(animationTime * 2.0);
-            const tableSlider = get('table-pos-x');
-            const tableSpan = get('table-pos-x-value');
-            if (tableSlider && tableSpan) {
-                tableSlider.value = tablePosX.toFixed(2);
-                tableSpan.textContent = tablePosX.toFixed(2);
-            }
-        } else if (animationPreset === 'slide_mouse') {
-            // Animasi mouse di atas meja (relatif terhadap meja)
-            mousePosX = 0.5 + 0.3 * Math.sin(animationTime * 1.5);
-            mousePosZ = 0.4 + 0.2 * Math.cos(animationTime * 2.0);
-            
-            // Update UI Slider-nya juga
-            const mouseSliderX = get('mouse-pos-x');
-            const mouseSpanX = get('mouse-pos-x-value');
-            const mouseSliderZ = get('mouse-pos-z');
-            const mouseSpanZ = get('mouse-pos-z-value');
-            if (mouseSliderX && mouseSpanX) {
-                mouseSliderX.value = mousePosX.toFixed(2);
-                mouseSpanX.textContent = mousePosX.toFixed(2);
-            }
-            if (mouseSliderZ && mouseSpanZ) {
-                mouseSliderZ.value = mousePosZ.toFixed(2);
-                mouseSpanZ.textContent = mousePosZ.toFixed(2);
-            }
-        }
+        const animatedValues = AnimationSystem.update(animationPreset);
+        // Override position values if animation provides them
+        if (animatedValues.posX !== undefined) posX = animatedValues.posX;
+        if (animatedValues.posZ !== undefined) posZ = animatedValues.posZ;
     }
     
+    // Clear buffers with background color
     const [r, g, b] = hexToRgb(bgColor);
     gl.clearColor(r, g, b, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
     
+    // Update projection matrix (perspective/orthogonal)
     updateProjectionMatrix();
     
-    // --- PENERAPAN HIERARKI MATRIKS ---
+    // Setup lighting and texture uniforms (Phong model)
+    RenderingSystem.setupLightingUniforms();
+    RenderingSystem.setupTextureUniforms();
     
-    // 1. Matriks Kamera (View)
-    let eye = vec3(eyeX, eyeY, eyeZ);
-    let at = vec3(atX, atY, atZ);
-    let up = vec3(upX, upY, upZ);
-    let mvm = lookAt(eye, at, up);
-    
-    // 2. Matriks Meja (Induk dari Monitor)
-    // Baca skala meja dari slider
-    const tableScale = parseFloat(get('table-scale')?.value) || 1.0;
-    // Pivot untuk skala meja: gunakan permukaan meja (table surface Y) sehingga monitor/mouse tetap di atas meja
-    const tableSurfaceY = -0.29; // sama dengan createTable() asumsi
-    const tablePivotX = 0, tablePivotY = tableSurfaceY, tablePivotZ = 0;
-
-    let mvmTable = mult(mvm, translate(tablePosX, 0, 0)); 
-    // Apply anchored scaling for table (translate to pivot -> scale -> translate back)
-    mvmTable = mult(mvmTable, translate(tablePivotX, tablePivotY, tablePivotZ));
-    mvmTable = mult(mvmTable, scale(tableScale, tableScale, tableScale));
-    mvmTable = mult(mvmTable, translate(-tablePivotX, -tablePivotY, -tablePivotZ));
-    
-    // 3. Matriks Monitor Base (Anak dari Meja)
-    let mvmBaseMonitor = mvmTable;
-    mvmBaseMonitor = mult(mvmBaseMonitor, translate(posX, posY, posZ));
-
-    // Baca nilai skala dari slider setiap frame (dynamic)
-    const scaleValue = parseFloat(get('scale').value) || 1.0;
-
-    // Terapkan skala dengan anchor di kaki monitor (scale pivot):
-    // translate(pivot) -> scale -> translate(-pivot)
-    mvmBaseMonitor = mult(mvmBaseMonitor, translate(scalePivotX, scalePivotY, scalePivotZ));
-    mvmBaseMonitor = mult(mvmBaseMonitor, scale(scaleValue, scaleValue, scaleValue));
-    mvmBaseMonitor = mult(mvmBaseMonitor, translate(-scalePivotX, -scalePivotY, -scalePivotZ));
-
-    // Setelah skala diaplikasikan, terapkan rotasi (jika diperlukan)
-    mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotZ, vec3(0, 0, 1)));
-    mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotY, vec3(0, 1, 0)));
-    mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotX, vec3(1, 0, 0)));
-
-    // 4. Matriks Screen (Anak dari Monitor Base)
-    let mvmScreen = mvmBaseMonitor;
-    mvmScreen = mult(mvmScreen, translate(screenPivotX, screenPivotY, screenPivotZ));
-    mvmScreen = mult(mvmScreen, rotate(tiltAngle, vec3(1, 0, 0))); // Tilt masih bisa
-    mvmScreen = mult(mvmScreen, translate(-screenPivotX, -screenPivotY, -screenPivotZ));
-
-    // --- END HIERARKI ---
-
-    
-    // Set uniform lighting & texturing (berlaku untuk semua objek)
-    gl.uniform1i(lightingUniforms.enableLighting, enableLighting);
-    gl.uniform3fv(lightingUniforms.lightPosition, flatten(lightPosition));
-    gl.uniform3fv(lightingUniforms.lightColor, flatten(lightColor));
-    gl.uniform3fv(lightingUniforms.ambientLight, flatten(ambientLight));
-    gl.uniform3fv(lightingUniforms.eyePosition, flatten(vec3(eyeX, eyeY, eyeZ)));
-    gl.uniform1f(lightingUniforms.ambientStrength, ambientStrength);
-    gl.uniform1f(lightingUniforms.diffuseStrength, diffuseStrength);
-    gl.uniform1f(lightingUniforms.specularStrength, specularStrength);
-    
-    gl.uniform1i(lightingUniforms.useTextures, useTextures);
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, checkerboardTexture); // SUDAH DIPERBAIKI
-    gl.uniform1i(lightingUniforms.checkerboardTexture, 0);
-    gl.activeTexture(gl.TEXTURE1);
-    gl.bindTexture(gl.TEXTURE_2D, wallpaperTexture);
-    gl.uniform1i(lightingUniforms.wallpaperTexture, 1);
-    
-    const wireframe = get('wireframe-mode').checked;
-    let normalMatrix; 
-
-    // --- DRAWING PASSES SESUAI HIERARKI ---
-    
-    // PASS 1: Gambar Meja (menggunakan mvmTable)
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmTable));
-    normalMatrix = mat3();
-    let invTable = inverse(mvmTable);
-    let trsTable = transpose(invTable);
-    normalMatrix = mat3(
-        trsTable[0][0], trsTable[0][1], trsTable[0][2],
-        trsTable[1][0], trsTable[1][1], trsTable[1][2],
-        trsTable[2][0], trsTable[2][1], trsTable[2][2]
-    );
-    gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-    
-    const tableIndexStart = monitorIndexCount;
-    if (tableIndexCount > 0) {
-        if (wireframe) {
-            for (let i = tableIndexStart; i < (monitorIndexCount + tableIndexCount); i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, tableIndexCount, gl.UNSIGNED_SHORT, tableIndexStart * 2);
-        }
-    }
-
-
-    // PASS 1.5: GAMBAR MOUSE (ANAK DARI MEJA)
-    let mvmMouse = mvmTable; // Mulai dari matriks meja
-
-    // Permukaan atas meja (dari createTable): Y = -0.29
-    const tableSurfaceY_local = tableSurfaceY; 
-
-    // Pindahkan mouse ke posisinya di atas meja (createMouse membuat alas mouse di Y=0)
-    mvmMouse = mult(mvmMouse, translate(mousePosX, tableSurfaceY_local, mousePosZ));
-
-    // Baca skala mouse dari slider dan aplikasikan anchored scaling di basis mouse (Y=0 lokal)
-    const mouseScale = parseFloat(get('mouse-scale')?.value) || 1.0;
-    // Karena kita sudah mentranslate mouse ke posisinya, scaling di origin lokal akan meng-anchorkannya pada alas
-    mvmMouse = mult(mvmMouse, scale(mouseScale, mouseScale, mouseScale));
-    mvmMouse = mult(mvmMouse, rotate(180, vec3(0, 1, 0)));
-    mvmMouse = mult(mvmMouse, rotate(15, vec3(0, 1, 0)));
-
-    // Update mouse animation state (left & right buttons)
-    const dt = 0.016;
-    let leftPressOffset = 0.0;
-    let rightPressOffset = 0.0;
-    if (mouseLeftClickAnimating) {
-        mouseLeftClickTime += dt;
-        const t = Math.min(mouseLeftClickTime / mouseClickDuration, 1.0);
-        leftPressOffset = mouseClickDepth * Math.sin(Math.PI * t);
-        if (mouseLeftClickTime >= mouseClickDuration) {
-            mouseLeftClickAnimating = false;
-            mouseLeftClickTime = 0;
-            leftPressOffset = 0.0;
-        }
-    }
-    if (mouseRightClickAnimating) {
-        mouseRightClickTime += dt;
-        const t = Math.min(mouseRightClickTime / mouseClickDuration, 1.0);
-        rightPressOffset = mouseClickDepth * Math.sin(Math.PI * t);
-        if (mouseRightClickTime >= mouseClickDuration) {
-            mouseRightClickAnimating = false;
-            mouseRightClickTime = 0;
-            rightPressOffset = 0.0;
-        }
-    }
-
-    if (mouseScrollActive) {
-        // rotate wheel continuously
-        mouseWheelAngle = (mouseWheelAngle + 360.0 * dt * 1.5) % 360.0;
-    }
-
-    const mouseIndexStart = monitorIndexCount + tableIndexCount;
-
-    // Draw mouse parts separately so we can animate palm (press) and wheel (spin)
-    // 1) Base
-    if (mouseBaseIndexCount > 0) {
-        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
-        let invM = inverse(mvmMouse);
-        let trsM = transpose(invM);
-        normalMatrix = mat3(
-            trsM[0][0], trsM[0][1], trsM[0][2],
-            trsM[1][0], trsM[1][1], trsM[1][2],
-            trsM[2][0], trsM[2][1], trsM[2][2]
-        );
-        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-        if (wireframe) {
-            for (let i = mouseBaseIndexStart; i < mouseBaseIndexStart + mouseBaseIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, mouseBaseIndexCount, gl.UNSIGNED_SHORT, mouseBaseIndexStart * 2);
-        }
-    }
-
-    // 2) Body
-    if (mouseBodyIndexCount > 0) {
-        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
-        let invM = inverse(mvmMouse);
-        let trsM = transpose(invM);
-        normalMatrix = mat3(
-            trsM[0][0], trsM[0][1], trsM[0][2],
-            trsM[1][0], trsM[1][1], trsM[1][2],
-            trsM[2][0], trsM[2][1], trsM[2][2]
-        );
-        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-        if (wireframe) {
-            for (let i = mouseBodyIndexStart; i < mouseBodyIndexStart + mouseBodyIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, mouseBodyIndexCount, gl.UNSIGNED_SHORT, mouseBodyIndexStart * 2);
-        }
-    }
-
-    // 3) Palm (rear/top of the mouse)
-    if (mousePalmIndexCount > 0) {
-        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
-        let invP = inverse(mvmMouse);
-        let trsP = transpose(invP);
-        normalMatrix = mat3(
-            trsP[0][0], trsP[0][1], trsP[0][2],
-            trsP[1][0], trsP[1][1], trsP[1][2],
-            trsP[2][0], trsP[2][1], trsP[2][2]
-        );
-        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-        if (wireframe) {
-            for (let i = mousePalmIndexStart; i < mousePalmIndexStart + mousePalmIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, mousePalmIndexCount, gl.UNSIGNED_SHORT, mousePalmIndexStart * 2);
-        }
-    }
-
-    // 3) Left button (animated press)
-    if (mouseLeftIndexCount > 0) {
-        let mvmLeft = mvmMouse;
-        mvmLeft = mult(mvmLeft, translate(mouseLeftPivot[0], mouseLeftPivot[1], mouseLeftPivot[2]));
-        mvmLeft = mult(mvmLeft, translate(0, -leftPressOffset, 0));
-        mvmLeft = mult(mvmLeft, translate(-mouseLeftPivot[0], -mouseLeftPivot[1], -mouseLeftPivot[2]));
-
-        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmLeft));
-        let invL = inverse(mvmLeft);
-        let trsL = transpose(invL);
-        normalMatrix = mat3(
-            trsL[0][0], trsL[0][1], trsL[0][2],
-            trsL[1][0], trsL[1][1], trsL[1][2],
-            trsL[2][0], trsL[2][1], trsL[2][2]
-        );
-        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-        if (wireframe) {
-            for (let i = mouseLeftIndexStart; i < mouseLeftIndexStart + mouseLeftIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, mouseLeftIndexCount, gl.UNSIGNED_SHORT, mouseLeftIndexStart * 2);
-        }
-    }
-
-    // 4) Right button (animated press)
-    if (mouseRightIndexCount > 0) {
-        let mvmRight = mvmMouse;
-        mvmRight = mult(mvmRight, translate(mouseRightPivot[0], mouseRightPivot[1], mouseRightPivot[2]));
-        mvmRight = mult(mvmRight, translate(0, -rightPressOffset, 0));
-        mvmRight = mult(mvmRight, translate(-mouseRightPivot[0], -mouseRightPivot[1], -mouseRightPivot[2]));
-
-        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmRight));
-        let invR = inverse(mvmRight);
-        let trsR = transpose(invR);
-        normalMatrix = mat3(
-            trsR[0][0], trsR[0][1], trsR[0][2],
-            trsR[1][0], trsR[1][1], trsR[1][2],
-            trsR[2][0], trsR[2][1], trsR[2][2]
-        );
-        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-        if (wireframe) {
-            for (let i = mouseRightIndexStart; i < mouseRightIndexStart + mouseRightIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, mouseRightIndexCount, gl.UNSIGNED_SHORT, mouseRightIndexStart * 2);
-        }
-    }
-
-    // 4) Wheel (animated spin)
-    if (mouseWheelIndexCount > 0) {
-        let mvmWheel = mvmMouse;
-        mvmWheel = mult(mvmWheel, translate(mouseWheelPivot[0], mouseWheelPivot[1], mouseWheelPivot[2]));
-        mvmWheel = mult(mvmWheel, rotate(mouseWheelAngle, vec3(1, 0, 0)));
-        mvmWheel = mult(mvmWheel, translate(-mouseWheelPivot[0], -mouseWheelPivot[1], -mouseWheelPivot[2]));
-
-        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmWheel));
-        let invW = inverse(mvmWheel);
-        let trsW = transpose(invW);
-        normalMatrix = mat3(
-            trsW[0][0], trsW[0][1], trsW[0][2],
-            trsW[1][0], trsW[1][1], trsW[1][2],
-            trsW[2][0], trsW[2][1], trsW[2][2]
-        );
-        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-        if (wireframe) {
-            for (let i = mouseWheelIndexStart; i < mouseWheelIndexStart + mouseWheelIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, mouseWheelIndexCount, gl.UNSIGNED_SHORT, mouseWheelIndexStart * 2);
-        }
-    }
-
-
-    // PASS 2: Gambar Screen (menggunakan mvmScreen)
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmScreen));
-    let invScr = inverse(mvmScreen);
-    let trsScr = transpose(invScr);
-    normalMatrix = mat3(
-        trsScr[0][0], trsScr[0][1], trsScr[0][2],
-        trsScr[1][0], trsScr[1][1], trsScr[1][2],
-        trsScr[2][0], trsScr[2][1], trsScr[2][2]
-    );
-    gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-    
-    if (screenIndexCount > 0) {
-        if (wireframe) {
-            for (let i = 0; i < screenIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, screenIndexCount, gl.UNSIGNED_SHORT, 0);
-        }
-    }
-
-    // PASS 3: Gambar Monitor Stand/Base (menggunakan mvmBaseMonitor)
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmBaseMonitor));
-    let invBase = inverse(mvmBaseMonitor);
-    let trsBase = transpose(invBase);
-    normalMatrix = mat3(
-        trsBase[0][0], trsBase[0][1], trsBase[0][2],
-        trsBase[1][0], trsBase[1][1], trsBase[1][2],
-        trsBase[2][0], trsBase[2][1], trsBase[2][2]
-    );
-    gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-    
-    const restIndexStart = screenIndexCount;
-    const restIndexCount = monitorIndexCount - screenIndexCount; // Hanya index stand
-    if (restIndexCount > 0) {
-        if (wireframe) {
-            for (let i = restIndexStart; i < monitorIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
-            }
-        } else {
-            gl.drawElements(gl.TRIANGLES, restIndexCount, gl.UNSIGNED_SHORT, restIndexStart * 2);
-        }
+    // =========================================================================
+    // RENDER USING LEFT-CHILD RIGHT-SIBLING SCENE GRAPH
+    // =========================================================================
+    if (sceneGraph) {
+        // Create view matrix as root transform
+        const viewMatrix = MatrixBuilder.createViewMatrix();
+        
+        // Render entire scene graph hierarchy using LCRS traversal
+        sceneGraph.render(viewMatrix);
     }
     
-    // Pass 3.5 (kabel terpisah) Dihapus
-    
+    // Request next frame
     requestAnimationFrame(render);
 }
+
+/**
+ * ============================================================================
+ * UI UPDATE FUNCTIONS
+ * ============================================================================
+ */
 
 function updateProjectionUI() {
     const orthoSettings = document.querySelectorAll('#ortho-left, #ortho-right, #ortho-bottom, #ortho-top').forEach(el => {
@@ -1192,11 +1647,10 @@ function updateProjectionUI() {
     });
 }
 
-function hexToRgb(hex) {
-    const n = parseInt(hex.replace('#', ''), 16);
-    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
-}
-
+/**
+ * Updates the projection matrix based on current mode.
+ * Supports both perspective and orthogonal projections.
+ */
 function updateProjectionMatrix() {
     const aspect = canvas.width / canvas.height;
     
@@ -1209,6 +1663,9 @@ function updateProjectionMatrix() {
     gl.uniformMatrix4fv(projectionMatrixLoc, false, flatten(projectionMatrix));
 }
 
+/**
+ * Updates camera slider UI to match current camera values.
+ */
 function updateCameraUI() {
     const cameraValues = {
         'eye-x': eyeX, 'eye-y': eyeY, 'eye-z': eyeZ,
@@ -1226,6 +1683,10 @@ function updateCameraUI() {
     });
 }
 
+/**
+ * Converts spherical coordinates to Cartesian camera position.
+ * Updates eye position sliders to match spherical camera control.
+ */
 function updateCameraFromSpherical() {
     eyeX = cameraRadius * Math.cos(cameraPhi) * Math.cos(cameraTheta);
     eyeY = cameraRadius * Math.sin(cameraPhi);
@@ -1419,18 +1880,44 @@ function setupEventListeners() {
     const tableSpan = document.getElementById('table-pos-x-value');
     if (tableSlider && tableSpan) {
         tableSlider.addEventListener('input', () => {
-            tablePosX = parseFloat(tableSlider.value); // Update var global
+            tablePosX = parseFloat(tableSlider.value);
             tableSpan.textContent = tablePosX.toFixed(2);
         });
     }
     
-    // --- EVENT LISTENER UNTUK MOUSE ---
+    const tableSliderY = document.getElementById('table-pos-y');
+    const tableSpanY = document.getElementById('table-pos-y-value');
+    if (tableSliderY && tableSpanY) {
+        tableSliderY.addEventListener('input', () => {
+            tablePosY = parseFloat(tableSliderY.value);
+            tableSpanY.textContent = tablePosY.toFixed(2);
+        });
+    }
+    
+    const tableSliderZ = document.getElementById('table-pos-z');
+    const tableSpanZ = document.getElementById('table-pos-z-value');
+    if (tableSliderZ && tableSpanZ) {
+        tableSliderZ.addEventListener('input', () => {
+            tablePosZ = parseFloat(tableSliderZ.value);
+            tableSpanZ.textContent = tablePosZ.toFixed(2);
+        });
+    }
+    
     const mouseSliderX = document.getElementById('mouse-pos-x');
     const mouseSpanX = document.getElementById('mouse-pos-x-value');
     if (mouseSliderX && mouseSpanX) {
         mouseSliderX.addEventListener('input', () => {
             mousePosX = parseFloat(mouseSliderX.value); 
             mouseSpanX.textContent = mousePosX.toFixed(2);
+        });
+    }
+    
+    const mouseSliderY = document.getElementById('mouse-pos-y');
+    const mouseSpanY = document.getElementById('mouse-pos-y-value');
+    if (mouseSliderY && mouseSpanY) {
+        mouseSliderY.addEventListener('input', () => {
+            mousePosY = parseFloat(mouseSliderY.value);
+            mouseSpanY.textContent = mousePosY.toFixed(2);
         });
     }
     
@@ -1734,8 +2221,21 @@ class PhotoCarousel {
     }
     
     updateCarousel() {
-        this.images.forEach((img, index) => {
-            img.classList.toggle('active', index === this.currentIndex);
+        this.images.forEach((item, index) => {
+            const isActive = index === this.currentIndex;
+            item.classList.toggle('active', isActive);
+            
+            // Handle video playback
+            if (item.tagName === 'VIDEO') {
+                if (isActive) {
+                    item.currentTime = 0; // Reset to start
+                    item.play().catch(err => {
+                        // Auto-play may be blocked, user can click play manually
+                    });
+                } else {
+                    item.pause();
+                }
+            }
         });
         
         this.indicators.forEach((indicator, index) => {
@@ -1791,7 +2291,7 @@ class PhotoCarousel {
     }
 }
 
-// Panggil PhotoCarousel saat DOM siap
 document.addEventListener('DOMContentLoaded', () => {
     new PhotoCarousel();
+    init();
 });

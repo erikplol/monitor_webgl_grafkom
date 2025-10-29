@@ -7,50 +7,79 @@
     <link rel="stylesheet" href="style.css">
 </head>
 
-<body>    
+<body>
+    <!-- Main Application Container -->
     <div class="main-container">
+        
+        <!-- WebGL Canvas Section -->
         <div class="canvas-container">
             <canvas id="gl-canvas" width="800" height="800"></canvas>
             <p class="student-info">
-                Medericus Mundi Miseridityo/5025231169<br>
-                Muhammad Baihaqi Dawanis/5025231177
-            </p> 
+                <b>Mundi Miseridityo/5025231169</b><br>
+                1. Pembuatan Model Monitor <br>
+                2. Hierarchical Model <br>
+                3. Lighting <br>
+                <b>Muhammad Baihaqi Dawanis/5025231177</b><br>
+                1. Pembuatan Model Meja <br>
+                2. Pembuatan Model Mouse <br>
+                3. Texture <br>
+                4. UI Web 
+            </p>
         </div>
         
+        <!-- Photo Carousel Section -->
         <div class="photo-carousel">
-            <h3>Perbandingan Foto & Hierarchical Tree*</h3>
+            <h3>Foto/Video Objek & Hierarchical Tree</h3>
+            
+            <!-- Carousel Container -->
             <div class="carousel-container">
-                <button class="carousel-btn prev-btn" id="prev-btn">❮</button>
+                <button class="carousel-btn prev-btn" id="prev-btn" aria-label="Previous">❮</button>
+                
                 <div class="carousel-images">
                     <img src="foto/foto1.jpeg" alt="Foto 1" class="carousel-image active">
                     <img src="foto/foto2.jpeg" alt="Foto 2" class="carousel-image">
                     <img src="foto/foto3.jpeg" alt="Foto 3" class="carousel-image">
                     <img src="foto/foto4.jpeg" alt="Foto 4" class="carousel-image">
-                    <img src="image.png" alt="Foto 5" class="carousel-image">
+                    <video src="foto/video1.mp4" class="carousel-image" controls muted loop></video>
+                    <video src="foto/video2.mp4" class="carousel-image" controls muted loop></video>
+                    <img src="foto/hierarchical-tree.jpg" alt="Hierarchical Tree" class="carousel-image">
                 </div>
-                <button class="carousel-btn next-btn" id="next-btn">❯</button>
+                
+                <button class="carousel-btn next-btn" id="next-btn" aria-label="Next">❯</button>
             </div>
+            
+            <!-- Carousel Navigation Indicators -->
             <div class="carousel-indicators">
                 <span class="indicator active" data-index="0"></span>
                 <span class="indicator" data-index="1"></span>
                 <span class="indicator" data-index="2"></span>
                 <span class="indicator" data-index="3"></span>
+                <span class="indicator" data-index="4"></span>
+                <span class="indicator" data-index="5"></span>
+                <span class="indicator" data-index="6"></span>
             </div>
+            
+            <!-- Photo Counter -->
             <div class="photo-counter">
-                <span id="current-photo">1</span> / 4
+                <span id="current-photo">1</span> / 7
             </div>
         </div>
 
+        <!-- Control Panel -->
         <div id="ui-panel">
+            
+            <!-- Projection Controls -->
             <div class="control-group">
                 <h3>Projection Control</h3>
+                
                 <div class="control-row">
-                    <label>Mode:</label>
+                    <label for="projection-mode">Mode:</label>
                     <select id="projection-mode" title="Select projection mode">
                         <option value="perspective">Perspective</option>
                         <option value="orthogonal">Orthogonal</option>
                     </select>
                 </div>
+                
                 <h4>Orthogonal Settings:</h4>
                 <div class="control-row">
                     <label for="ortho-left">Left:</label>
@@ -74,8 +103,11 @@
                 </div>
             </div>
 
+            <!-- Camera Controls -->
             <div class="control-group">
                 <h3>Camera Control</h3>
+                
+                <!-- Eye Position -->
                 <h4>Eye Position:</h4>
                 <div class="control-row">
                     <label for="eye-x">Eye X:</label>
@@ -92,6 +124,8 @@
                     <input type="range" id="eye-z" min="-10" max="10" step="0.1" value="3">
                     <span id="eye-z-value">3.0</span>
                 </div>
+                
+                <!-- Look At Point -->
                 <h4>Look At Point:</h4>
                 <div class="control-row">
                     <label for="at-x">At X:</label>
@@ -108,6 +142,8 @@
                     <input type="range" id="at-z" min="-10" max="10" step="0.1" value="0">
                     <span id="at-z-value">0.0</span>
                 </div>
+                
+                <!-- Up Vector -->
                 <h4>Up Vector:</h4>
                 <div class="control-row">
                     <label for="up-x">Up X:</label>
@@ -124,6 +160,8 @@
                     <input type="range" id="up-z" min="-1" max="1" step="0.1" value="0">
                     <span id="up-z-value">0.0</span>
                 </div>
+                
+                <!-- Camera Presets -->
                 <div class="button-group">
                     <label>Camera Presets:</label>
                     <button type="button" onclick="setCameraPreset('front')">Front</button>
@@ -136,19 +174,24 @@
                 </div>
             </div>
 
+            <!-- Lighting Controls -->
             <div class="control-group">
                 <h3>Lighting Control</h3>
+                
+                <!-- Enable/Disable Lighting -->
                 <div class="control-row">
                     <label for="enable-lighting">Enable Lighting:</label>
                     <input type="checkbox" id="enable-lighting" checked>
                 </div>
                 
+                <!-- Texture Settings -->
                 <h4>Texture Settings:</h4>
                 <div class="control-row">
                     <label for="use-textures">Enable Textures:</label>
                     <input type="checkbox" id="use-textures" checked>
                 </div>
                 
+                <!-- Phong Lighting Components -->
                 <h4>Phong Lighting Components:</h4>
                 <div class="control-row">
                     <label for="ambient-strength">Ambient Strength:</label>
@@ -166,6 +209,7 @@
                     <span id="specular-strength-value">1.20</span>
                 </div>
                 
+                <!-- Light Color & Intensity -->
                 <h4>Light Color & Intensity:</h4>
                 <div class="control-row">
                     <label for="light-color">Light Color:</label>
@@ -176,6 +220,7 @@
                     <input type="color" id="ambient-color" value="#666666">
                 </div>
                 
+                <!-- Spotlight Position -->
                 <h4>Spotlight Position:</h4>
                 <div class="control-row">
                     <label for="light-pos-x">Position X:</label>
@@ -194,87 +239,96 @@
                 </div>
             </div>
 
+            <!-- Transform Controls -->
             <div class="control-group">
                 <h3>Transform Controls</h3>
                 
+                <!-- Table Transform -->
                 <h4>Table Transform:</h4>
                 <div class="control-row">
-                    <label for="table-pos-x">Table Slide X:</label>
+                    <label for="table-pos-x">Position X:</label>
                     <input type="range" id="table-pos-x" min="-2" max="2" step="0.01" value="0">
                     <span id="table-pos-x-value">0.00</span>
                 </div>
                 <div class="control-row">
-                    <label for="table-scale">Table Scale:</label>
-                    <input type="range" id="table-scale" min="0.1" max="3" step="0.01" value="1"> <span id="table-scale-value">1.00</span>
+                    <label for="table-pos-y">Position Y:</label>
+                    <input type="range" id="table-pos-y" min="-2" max="2" step="0.01" value="0">
+                    <span id="table-pos-y-value">0.00</span>
+                </div>
+                <div class="control-row">
+                    <label for="table-pos-z">Position Z:</label>
+                    <input type="range" id="table-pos-z" min="-2" max="2" step="0.01" value="0">
+                    <span id="table-pos-z-value">0.00</span>
+                </div>
+                <div class="control-row">
+                    <label for="table-scale">Scale:</label>
+                    <input type="range" id="table-scale" min="0.1" max="3" step="0.01" value="1">
+                    <span id="table-scale-value">1.00</span>
                 </div>
                 
-                <h4>Monitor Transform (Relative to Table):</h4>
+                <!-- Monitor Transform -->
+                <h4>Monitor Transform:</h4>
                 <div class="control-row">
-                    <label for="scale">Scale:</label>
-                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="1"> <span id="scale-value">1.00</span>
-                </div>
-                <h4>Position:</h4>
-                <div class="control-row">
-                    <label for="position-x">X:</label>
-                    <input type="range" id="position-x" min="-0.8" max="0.8" step="0.01" value="0"> 
+                    <label for="position-x">Position X:</label>
+                    <input type="range" id="position-x" min="-0.8" max="0.8" step="0.01" value="0">
                     <span id="position-x-value">0.00</span>
                 </div>
                 <div class="control-row">
-                    <label for="position-y">Y:</label>
-                    <input type="range" id="position-y" min="0" max="0.5" step="0.01" value="0"> 
+                    <label for="position-y">Position Y:</label>
+                    <input type="range" id="position-y" min="0" max="0.5" step="0.01" value="0">
                     <span id="position-y-value">0.00</span>
                 </div>
                 <div class="control-row">
-                    <label for="position-z">Z:</label>
-                    <input type="range" id="position-z" min="-0.4" max="0.4" step="0.01" value="0"> 
+                    <label for="position-z">Position Z:</label>
+                    <input type="range" id="position-z" min="-0.4" max="0.4" step="0.01" value="0">
                     <span id="position-z-value">0.00</span>
                 </div>
-                <h4>Rotation:</h4>
                 <div class="control-row">
-                    <label for="rotation-x">X:</label>
-                    <input type="range" id="rotation-x" min="0" max="360" step="1" value="0" disabled> <span id="rotation-x-value">0</span>
+                    <label for="scale">Scale:</label>
+                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="1">
+                    <span id="scale-value">1.00</span>
                 </div>
-                <div class="control-row">
-                    <label for="rotation-y">Y:</label>
-                    <input type="range" id="rotation-y" min="0" max="360" step="1" value="10" disabled> <span id="rotation-y-value"></span>
-                </div>
-                <div class="control-row">
-                    <label for="rotation-z">Z:</label>
-                    <input type="range" id="rotation-z" min="0" max="360" step="1" value="0" disabled> <span id="rotation-z-value">0</span>
-                </div>
-
-                <h4>Tilt Monitor</h4>
                 <div class="control-row">
                     <label for="tilt-angle">Tilt Angle:</label>
                     <input type="range" id="tilt-angle" min="-10" max="10" step="1" value="0">
                     <span id="tilt-angle-value">0</span>
                 </div>
 
-                <h4>Mouse Transform (Relative to Table):</h4>
+                <!-- Mouse Transform -->
+                <h4>Mouse Transform:</h4>
                 <div class="control-row">
-                    <label for="mouse-pos-x">Mouse X:</label>
-                    <input type="range" id="mouse-pos-x" min="-0.9" max="0.9" step="0.01" value="0.5"> 
+                    <label for="mouse-pos-x">Position X:</label>
+                    <input type="range" id="mouse-pos-x" min="-0.9" max="0.9" step="0.01" value="0.5">
                     <span id="mouse-pos-x-value">0.50</span>
                 </div>
                 <div class="control-row">
-                    <label for="mouse-scale">Mouse Scale:</label>
-                    <input type="range" id="mouse-scale" min="0.1" max="3" step="0.01" value="1"> <span id="mouse-scale-value">1.00</span>
+                    <label for="mouse-pos-y">Position Y:</label>
+                    <input type="range" id="mouse-pos-y" min="-0.5" max="0.5" step="0.01" value="-0.29">
+                    <span id="mouse-pos-y-value">-0.29</span>
                 </div>
+                <div class="control-row">
+                    <label for="mouse-pos-z">Position Z:</label>
+                    <input type="range" id="mouse-pos-z" min="-0.4" max="0.4" step="0.01" value="0.3">
+                    <span id="mouse-pos-z-value">0.30</span>
+                </div>
+                <div class="control-row">
+                    <label for="mouse-scale">Scale:</label>
+                    <input type="range" id="mouse-scale" min="0.1" max="3" step="0.01" value="1">
+                    <span id="mouse-scale-value">1.00</span>
+                </div>
+                
+                <!-- Mouse Interaction Buttons -->
                 <div class="control-row">
                     <button id="mouse-left-click-btn" type="button">Left Click</button>
                     <button id="mouse-scroll-btn" type="button">Toggle Scroll</button>
                     <button id="mouse-right-click-btn" type="button">Right Click</button>
                 </div>
-                <div class="control-row">
-                    <label for="mouse-pos-z">Mouse Z:</label>
-                    <input type="range" id="mouse-pos-z" min="-0.4" max="0.4" step="0.01" value="0.3"> 
-                    <span id="mouse-pos-z-value">0.30</span>
-                </div>
-
             </div>
 
+            <!-- Display & Animation Controls -->
             <div class="control-group">
                 <h3>Display & Animation</h3>
+                
                 <div class="control-row">
                     <label for="bg-color">Background:</label>
                     <input type="color" id="bg-color" value="#ffffff">
@@ -283,62 +337,79 @@
                     <label for="wireframe-mode">Wireframe:</label>
                     <input type="checkbox" id="wireframe-mode">
                 </div>
+                
+                <!-- Animation Controls -->
                 <div class="button-group">
                     <button id="animate-btn">Start Animation</button>
                     <select id="animation-preset" title="Select animation preset">
-                        <option value="spin">Spin</option>
-                        <option value="bounce">Bounce</option>
-                        <option value="pulse">Pulse</option>
                         <option value="tilt">Tilt</option>
                         <option value="slide_table">Slide Table</option>
+                        <option value="slide_monitor">Slide Monitor</option>
                         <option value="slide_mouse">Slide Mouse</option>
+                        <option value="all_combined">All Combined</option>
                     </select>
                 </div>
             </div>
         </div>
     </div>
 
+    <!-- Vertex Shader -->
     <script id="vertex-shader" type="x-shader/x-vertex">
     #version 300 es
+    
+    // Vertex Attributes
     in vec4 aPosition;
     in vec4 aColor;
     in vec3 aNormal;
     in float aShininess;
     in vec2 aTexCoord;
     
+    // Outputs to Fragment Shader
     out vec4 vColor;
     out vec3 vNormal;
     out vec3 vPosition;
     out float vShininess;
     out vec2 vTexCoord;
 
+    // Transformation Matrices
     uniform mat4 modelViewMatrix;
     uniform mat4 projectionMatrix;
     uniform mat3 normalMatrix;
 
     void main() {
+        // Transform vertex position to world space
         vec4 worldPosition = modelViewMatrix * aPosition;
         vPosition = worldPosition.xyz;
+        
+        // Transform normal vector
         vNormal = normalize(normalMatrix * aNormal);
+        
+        // Pass through vertex attributes
         vColor = aColor;
         vShininess = aShininess;
         vTexCoord = aTexCoord;
+        
+        // Final position in clip space
         gl_Position = projectionMatrix * worldPosition;
     }
     </script>
 
+    <!-- Fragment Shader -->
     <script id="fragment-shader" type="x-shader/x-fragment">
     #version 300 es
     precision mediump float;
     
+    // Inputs from Vertex Shader
     in vec4 vColor;
     in vec3 vNormal;
     in vec3 vPosition;
     in float vShininess;
     in vec2 vTexCoord;
     
+    // Output Color
     out vec4 fColor;
     
+    // Lighting Uniforms
     uniform bool enableLighting;
     uniform vec3 lightPosition;
     uniform vec3 lightColor;
@@ -347,61 +418,55 @@
     uniform float ambientStrength;
     uniform float diffuseStrength;
     uniform float specularStrength;
+    
+    // Texture Uniforms
     uniform bool useTextures;
-    uniform sampler2D checkerboardTexture;
     uniform sampler2D wallpaperTexture;
     
     void main() {
         vec3 materialColor = vColor.rgb;
         
-        if (useTextures) {
-            if (vShininess > 15.0) {
-                // Screen - use wallpaper texture
-                vec3 texColor = texture(wallpaperTexture, vTexCoord).rgb;
-                materialColor = texColor;
-            } else {
-                // Body parts - use checkerboard texture
-                vec3 texColor = texture(checkerboardTexture, vTexCoord).rgb;
-                // Beri warna meja (shininess rendah) agar tidak terlalu terpengaruh checkerboard
-                // Panel putih (shininess=3.0) tidak akan terlalu terpengaruh
-                 // Mouse (shininess=10) akan lebih terpengaruh
-                if(vShininess < 4.0) { 
-                    materialColor = mix(materialColor, texColor, 0.4);
-                } else if (vShininess < 11.0) { // Mouse & Monitor Body
-                     materialColor = mix(materialColor, texColor, 0.8);
-                } else { // Parts lain (jika ada)
-                     materialColor = mix(materialColor, texColor, 0.6);
-                }
-            }
+        // Apply texture if enabled and shininess threshold met
+        if (useTextures && vShininess > 15.0) {
+            vec3 texColor = texture(wallpaperTexture, vTexCoord).rgb;
+            materialColor = texColor;
         }
         
+        // No lighting - just return material color
         if (!enableLighting) {
             fColor = vec4(materialColor, 1.0);
             return;
         }
         
-        vec3 N = normalize(vNormal);
-        vec3 L = normalize(lightPosition - vPosition);
-        vec3 E = normalize(eyePosition - vPosition);
-        vec3 H = normalize(L + E);
+        // Phong Lighting Model
+        vec3 N = normalize(vNormal);           // Normal vector
+        vec3 L = normalize(lightPosition - vPosition);  // Light direction
+        vec3 E = normalize(eyePosition - vPosition);    // Eye direction
+        vec3 H = normalize(L + E);             // Half vector
         
+        // Ambient Component
         vec4 ambient = vec4(ambientStrength * ambientLight * materialColor, 1.0);
         
+        // Diffuse Component
         float Kd = max(dot(L, N), 0.0);
         vec4 diffuse = vec4(Kd * diffuseStrength * lightColor * materialColor, 1.0);
         
+        // Specular Component (Blinn-Phong)
         float Ks = pow(max(dot(N, H), 0.0), vShininess);
         vec4 specular = vec4(Ks * specularStrength * lightColor, 1.0);
         
-        if(dot(L, N) < 0.0) {
+        // Disable specular if surface faces away from light
+        if (dot(L, N) < 0.0) {
             specular = vec4(0.0, 0.0, 0.0, 1.0);
         }
         
+        // Combine all lighting components
         fColor = ambient + diffuse + specular;
         fColor.a = 1.0;
     }
     </script>
 
+    <!-- External JavaScript Libraries -->
     <script src="initShaders.js"></script>
     <script src="MVnew.js"></script>
     <script src="monitor.js"></script>
