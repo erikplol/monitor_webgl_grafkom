@@ -203,11 +203,15 @@
                     <input type="range" id="table-pos-x" min="-2" max="2" step="0.01" value="0">
                     <span id="table-pos-x-value">0.00</span>
                 </div>
+                <div class="control-row">
+                    <label for="table-scale">Table Scale:</label>
+                    <input type="range" id="table-scale" min="0.1" max="3" step="0.01" value="1"> <span id="table-scale-value">1.00</span>
+                </div>
                 
                 <h4>Monitor Transform (Relative to Table):</h4>
-                 <div class="control-row">
+                <div class="control-row">
                     <label for="scale">Scale:</label>
-                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="3" disabled> <span id="scale-value">3.00</span>
+                    <input type="range" id="scale" min="0.1" max="3" step="0.01" value="1"> <span id="scale-value">1.00</span>
                 </div>
                 <h4>Position:</h4>
                 <div class="control-row">
@@ -239,11 +243,27 @@
                     <input type="range" id="rotation-z" min="0" max="360" step="1" value="0" disabled> <span id="rotation-z-value">0</span>
                 </div>
 
+                <h4>Tilt Monitor</h4>
+                <div class="control-row">
+                    <label for="tilt-angle">Tilt Angle:</label>
+                    <input type="range" id="tilt-angle" min="-10" max="10" step="1" value="0">
+                    <span id="tilt-angle-value">0</span>
+                </div>
+
                 <h4>Mouse Transform (Relative to Table):</h4>
                 <div class="control-row">
                     <label for="mouse-pos-x">Mouse X:</label>
                     <input type="range" id="mouse-pos-x" min="-0.9" max="0.9" step="0.01" value="0.5"> 
                     <span id="mouse-pos-x-value">0.50</span>
+                </div>
+                <div class="control-row">
+                    <label for="mouse-scale">Mouse Scale:</label>
+                    <input type="range" id="mouse-scale" min="0.1" max="3" step="0.01" value="1"> <span id="mouse-scale-value">1.00</span>
+                </div>
+                <div class="control-row">
+                    <button id="mouse-left-click-btn" type="button">Left Click</button>
+                    <button id="mouse-scroll-btn" type="button">Toggle Scroll</button>
+                    <button id="mouse-right-click-btn" type="button">Right Click</button>
                 </div>
                 <div class="control-row">
                     <label for="mouse-pos-z">Mouse Z:</label>
@@ -273,12 +293,6 @@
                         <option value="slide_table">Slide Table</option>
                         <option value="slide_mouse">Slide Mouse</option>
                     </select>
-                </div>
-                <h4>Tilt</h4>
-                <div class="control-row">
-                    <label for="tilt-angle">Tilt Angle (deg):</label>
-                    <input type="range" id="tilt-angle" min="-10" max="10" step="1" value="0">
-                    <span id="tilt-angle-value">0</span>
                 </div>
             </div>
         </div>

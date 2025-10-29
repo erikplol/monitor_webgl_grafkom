@@ -12,8 +12,34 @@ let mouseIndexCount = 0;   // Hanya badan mouse
 let tablePosX = 0;         // Posisi X untuk meja (animasi geser)
 let mousePosX = 0.5, mousePosZ = 0.3; 
 
+// Mouse part index ranges (filled in createMouse)
+let mouseBaseIndexStart = 0, mouseBaseIndexCount = 0;
+let mouseBodyIndexStart = 0, mouseBodyIndexCount = 0;
+let mousePalmIndexStart = 0, mousePalmIndexCount = 0;
+let mouseLeftIndexStart = 0, mouseLeftIndexCount = 0;
+let mouseGripIndexStart = 0, mouseGripIndexCount = 0;
+let mouseRightIndexStart = 0, mouseRightIndexCount = 0;
+let mouseWheelIndexStart = 0, mouseWheelIndexCount = 0;
+
+// Local pivots for mouse parts (in mouse local coordinates)
+let mouseLeftPivot = vec3(0,0,0);
+let mouseRightPivot = vec3(0,0,0);
+let mouseWheelPivot = vec3(0,0,0);
+
+// Mouse animation state (left and right clicks)
+let mouseLeftClickAnimating = false;
+let mouseLeftClickTime = 0;
+let mouseRightClickAnimating = false;
+let mouseRightClickTime = 0;
+const mouseClickDuration = 0.6; // seconds (down+up) - made longer per request
+const mouseClickDepth = 0.02; // how far button moves down on click
+
+let mouseScrollActive = false;
+let mouseWheelAngle = 0; // degrees
+
 let tiltAngle = 0; // degrees
 let screenPivotX = 0, screenPivotY = 0, screenPivotZ = 0; // pivot for tilt
+let scalePivotX = 0, scalePivotY = 0, scalePivotZ = 0; // pivot for monitor scale (foot)
 let isAnimating = false, animationPreset = 'spin', animationTime = 0;
 
 // Texture variables
@@ -33,6 +59,7 @@ let upX = 0, upY = 1, upZ = 0;
 // Mouse control variables
 let mouseDown = false;
 let lastMouseX = 0, lastMouseY = 0;
+let mousePan = false; // true when shift+drag is active
 let cameraRadius = 3;
 let cameraTheta = 0; // horizontal rotation
 let cameraPhi = 0;   // vertical rotation
@@ -110,7 +137,7 @@ function init() {
     mousePosX = parseFloat(document.getElementById('mouse-pos-x').value);
     mousePosZ = parseFloat(document.getElementById('mouse-pos-z').value);
 
-    // --- HIERARCHY LOADING ---
+    // Hierarchy loading
     // 1. Buat Monitor (Screen + Stand)
     createMonitor();
     monitorIndexCount = indices.length; 
@@ -124,7 +151,7 @@ function init() {
     mouseIndexCount = indices.length - monitorIndexCount - tableIndexCount;
     
     // 4. (Tidak ada kabel terpisah)
-    // -------------------------
+    // ---
 
     setupBuffers();
 
@@ -161,7 +188,7 @@ function init() {
     render();
 }
 
-// --- FUNGSI MEJA DIPERBARUI (PANEL COKLAT LEBAR PENUH) ---
+// Table geometry
 function createTable() {
     
     const darkWoodColor = vec4(0.3, 0.2, 0.15, 1.0); 
@@ -190,7 +217,7 @@ function createTable() {
     // 3. Panel Kaki Kanan (Coklat Tua, menghadap samping)
     createCubeWithShininess(sidePanelThickness, panelHeight, sidePanelDepth, darkWoodColor, sidePanelXOffset, panelY, 0, bodyShininess);
     
-    // --- Panel Depan (Putih dan Coklat) ---
+    // Front panels
     const frontPanelThickness = 0.02; // KETEBALAN TIPIS di Z (untuk panel putih & coklat)
     const frontPanelZ = (-sidePanelDepth / 2) + 0.1 + (frontPanelThickness / 2); // -0.34
     
@@ -240,9 +267,9 @@ function createTable() {
         bodyShininess
     );
 }
-// ----------------------------------------
+// ---
 
-// --- FUNGSI MOUSE BARU (HANYA BADAN, WIRELESS) ---
+// Mouse geometry
 function createMouse() {
     const mouseColor = vec4(0.1, 0.1, 0.1, 1.0);
     const wheelColor = vec4(0.2, 0.2, 0.2, 1.0);
@@ -256,27 +283,63 @@ function createMouse() {
     const baseY = 0;
     const baseWidth = 0.08;
     const baseDepth = 0.12;
+    let idxStart = indices.length;
     createCubeWithShininess(baseWidth, baseHeight, baseDepth, mouseColor, 0, baseY + baseHeight/2, 0, mouseShininess);
+    mouseBaseIndexStart = idxStart;
+    mouseBaseIndexCount = indices.length - idxStart;
 
     // 2. Badan (tengah)
     const bodyHeight = 0.01;
     const bodyY = baseY + baseHeight;
     const bodyWidth = 0.075;
     const bodyDepth = 0.11;
+    idxStart = indices.length;
     createCubeWithShininess(bodyWidth, bodyHeight, bodyDepth, mouseColor, 0, bodyY + bodyHeight/2, 0, mouseShininess);
+    mouseBodyIndexStart = idxStart;
+    mouseBodyIndexCount = indices.length - idxStart;
     
-    // 3. Punggung (atas, agak ke belakang)
     const palmHeight = 0.01;
     const palmY = bodyY + bodyHeight;
     const palmWidth = 0.07;
-    const palmDepth = 0.08;
-    createCubeWithShininess(palmWidth, palmHeight, palmDepth, mouseColor, 0, palmY + palmHeight/2, -0.01, mouseShininess);
+    const palmDepth = 0.06; // made the palm a bit shorter (reduced depth)
+    // create palm (rear/top of mouse)
+    mousePalmIndexStart = indices.length;
+    createCubeWithShininess(palmWidth, palmHeight, palmDepth, mouseColor, 0, palmY + palmHeight/2, -0.02, mouseShininess);
+    mousePalmIndexCount = indices.length - mousePalmIndexStart;
+    idxStart = indices.length;
+    // Make the scroll wheel thinner while making the clickable buttons wider
+    const wheelNominalW = 0.012; // thinner wheel
+    const btnWidth = 0.025; // wider click regions (longer)
+    const btnDepth = 0.03; // extend button depth a bit
+    const btnHeight = palmHeight; // same height as palm
+    const btnZ = 0.04; // flank the scroll wheel at same Z
+    const btnGap = 0.003; // slightly larger gap between wheel and buttons
+    const leftOffsetX = -(btnWidth / 2 + wheelNominalW / 2 + btnGap); // left of wheel
+    const rightOffsetX = -leftOffsetX; // symmetric
+
+    // left button
+    mouseLeftIndexStart = indices.length;
+    createCubeWithShininess(btnWidth, btnHeight, btnDepth, mouseColor, leftOffsetX, palmY + palmHeight/2, btnZ, mouseShininess);
+    mouseLeftIndexCount = indices.length - mouseLeftIndexStart;
+    mouseLeftPivot = vec3(leftOffsetX, palmY + palmHeight/2, btnZ);
+
+    // right button
+    mouseRightIndexStart = indices.length;
+    createCubeWithShininess(btnWidth, btnHeight, btnDepth, mouseColor, rightOffsetX, palmY + palmHeight/2, btnZ, mouseShininess);
+    mouseRightIndexCount = indices.length - mouseRightIndexStart;
+    mouseRightPivot = vec3(rightOffsetX, palmY + palmHeight/2, btnZ);
 
     // 4. Scroll Wheel (mencuat dari badan)
     const wheelHeight = 0.015;
     const wheelY = bodyY + wheelHeight/2; // Mencuat dari lapisan badan
     const wheelZ = 0.04; // Posisi Z wheel
-    createCubeWithShininess(0.015, wheelHeight, 0.015, wheelColor, 0, wheelY, wheelZ, mouseShininess);
+    idxStart = indices.length;
+    // create a wider wheel to match the longer click/scroll region
+    createCubeWithShininess(wheelNominalW, wheelHeight, wheelNominalW, wheelColor, 0, wheelY, wheelZ, mouseShininess);
+    mouseWheelIndexStart = idxStart;
+    mouseWheelIndexCount = indices.length - idxStart;
+    // store wheel pivot (local mouse coordinates)
+    mouseWheelPivot = vec3(0, wheelY, wheelZ);
 
     // 5. Kabel dihapus
 }
@@ -410,6 +473,14 @@ function createMonitor() {
         -screenDepthBack * 0.5,
         bodyShininess
     );
+
+    // Tentukan pivot untuk skala monitor (anchor di kaki / foot)
+    // scalePivotY harus menunjuk ke posisi paling bawah dari base (world/model space)
+    scalePivotX = 0;
+    // base tinggi = 0.03, jadi bottom = baseYPos - 0.03/2
+    scalePivotY = baseYPos - (0.03 / 2);
+    // gunakan Z center dari base sebagai pivot Z
+    scalePivotZ = -screenDepthBack * 0.5;
 }
 
 function createCubeWithShininess(width, height, depth, color, cx, cy, cz, shininess) {
@@ -537,8 +608,6 @@ function createCurvedBackPanelWithShininess(width, height, maxDepth, color, cx, 
             indices.push(startIndex + row1 + i, startIndex + row2 + i + 1, startIndex + row2 + i);
         }
     }
-
-    // Sisa fungsi (frontBezel, dll) tidak relevan untuk mouse
 }
 
 function createBoxWithHoleAndShininess(width, height, depth, holeRadius, colorOuter, colorInner, cx, cy, cz, rotX, rotY, rotZ, segments, shininess) {
@@ -719,7 +788,7 @@ function setupBuffers() {
     gl.enableVertexAttribArray(texCoordLoc);
 }
 
-// --- FUNGSI RENDER (DENGAN MONITOR FIX & MENGHAPUS DONGLE/KABEL TERPISAH) ---
+// Render loop
 function render() {
     const get = id => document.getElementById(id);
     const bgColor = get('bg-color').value;
@@ -733,7 +802,6 @@ function render() {
     // atau nilai terakhir sebelum di-disable. Kita tidak perlu membacanya lagi di sini.
     // Jika Anda ingin *memaksa* nilai tertentu, set di sini:
     let rotX = 0, rotY = 0, rotZ = 0; // Nilai default dari HTML
-    let scaleValue = 1; // Nilai default dari HTML
     
     
     if (isAnimating) {
@@ -789,16 +857,35 @@ function render() {
     let mvm = lookAt(eye, at, up);
     
     // 2. Matriks Meja (Induk dari Monitor)
+    // Baca skala meja dari slider
+    const tableScale = parseFloat(get('table-scale')?.value) || 1.0;
+    // Pivot untuk skala meja: gunakan permukaan meja (table surface Y) sehingga monitor/mouse tetap di atas meja
+    const tableSurfaceY = -0.29; // sama dengan createTable() asumsi
+    const tablePivotX = 0, tablePivotY = tableSurfaceY, tablePivotZ = 0;
+
     let mvmTable = mult(mvm, translate(tablePosX, 0, 0)); 
+    // Apply anchored scaling for table (translate to pivot -> scale -> translate back)
+    mvmTable = mult(mvmTable, translate(tablePivotX, tablePivotY, tablePivotZ));
+    mvmTable = mult(mvmTable, scale(tableScale, tableScale, tableScale));
+    mvmTable = mult(mvmTable, translate(-tablePivotX, -tablePivotY, -tablePivotZ));
     
     // 3. Matriks Monitor Base (Anak dari Meja)
     let mvmBaseMonitor = mvmTable;
     mvmBaseMonitor = mult(mvmBaseMonitor, translate(posX, posY, posZ));
-    // Gunakan nilai rotasi & skala yang fix (tidak dari slider)
+
+    // Baca nilai skala dari slider setiap frame (dynamic)
+    const scaleValue = parseFloat(get('scale').value) || 1.0;
+
+    // Terapkan skala dengan anchor di kaki monitor (scale pivot):
+    // translate(pivot) -> scale -> translate(-pivot)
+    mvmBaseMonitor = mult(mvmBaseMonitor, translate(scalePivotX, scalePivotY, scalePivotZ));
+    mvmBaseMonitor = mult(mvmBaseMonitor, scale(scaleValue, scaleValue, scaleValue));
+    mvmBaseMonitor = mult(mvmBaseMonitor, translate(-scalePivotX, -scalePivotY, -scalePivotZ));
+
+    // Setelah skala diaplikasikan, terapkan rotasi (jika diperlukan)
     mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotZ, vec3(0, 0, 1)));
     mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotY, vec3(0, 1, 0)));
     mvmBaseMonitor = mult(mvmBaseMonitor, rotate(rotX, vec3(1, 0, 0)));
-    mvmBaseMonitor = mult(mvmBaseMonitor, scale(scaleValue, scaleValue, scaleValue));
 
     // 4. Matriks Screen (Anak dari Monitor Base)
     let mvmScreen = mvmBaseMonitor;
@@ -858,37 +945,185 @@ function render() {
 
     // PASS 1.5: GAMBAR MOUSE (ANAK DARI MEJA)
     let mvmMouse = mvmTable; // Mulai dari matriks meja
-    
+
     // Permukaan atas meja (dari createTable): Y = -0.29
-    const tableSurfaceY = -0.29; 
-    
-    // Pindahkan mouse ke posisinya di atas meja
-    // (createMouse sudah membuat alas mouse di Y=0)
-    mvmMouse = mult(mvmMouse, translate(mousePosX, tableSurfaceY, mousePosZ));
-    
-    // Beri sedikit rotasi agar tidak terlalu kaku
+    const tableSurfaceY_local = tableSurfaceY; 
+
+    // Pindahkan mouse ke posisinya di atas meja (createMouse membuat alas mouse di Y=0)
+    mvmMouse = mult(mvmMouse, translate(mousePosX, tableSurfaceY_local, mousePosZ));
+
+    // Baca skala mouse dari slider dan aplikasikan anchored scaling di basis mouse (Y=0 lokal)
+    const mouseScale = parseFloat(get('mouse-scale')?.value) || 1.0;
+    // Karena kita sudah mentranslate mouse ke posisinya, scaling di origin lokal akan meng-anchorkannya pada alas
+    mvmMouse = mult(mvmMouse, scale(mouseScale, mouseScale, mouseScale));
+    mvmMouse = mult(mvmMouse, rotate(180, vec3(0, 1, 0)));
     mvmMouse = mult(mvmMouse, rotate(15, vec3(0, 1, 0)));
-    
-    // Set matriks untuk mouse 
-    gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
-    let invMouse = inverse(mvmMouse);
-    let trsMouse = transpose(invMouse);
-    normalMatrix = mat3(
-        trsMouse[0][0], trsMouse[0][1], trsMouse[0][2],
-        trsMouse[1][0], trsMouse[1][1], trsMouse[1][2],
-        trsMouse[2][0], trsMouse[2][1], trsMouse[2][2]
-    );
-    gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
-    
-    // Gambar mouse 
+
+    // Update mouse animation state (left & right buttons)
+    const dt = 0.016;
+    let leftPressOffset = 0.0;
+    let rightPressOffset = 0.0;
+    if (mouseLeftClickAnimating) {
+        mouseLeftClickTime += dt;
+        const t = Math.min(mouseLeftClickTime / mouseClickDuration, 1.0);
+        leftPressOffset = mouseClickDepth * Math.sin(Math.PI * t);
+        if (mouseLeftClickTime >= mouseClickDuration) {
+            mouseLeftClickAnimating = false;
+            mouseLeftClickTime = 0;
+            leftPressOffset = 0.0;
+        }
+    }
+    if (mouseRightClickAnimating) {
+        mouseRightClickTime += dt;
+        const t = Math.min(mouseRightClickTime / mouseClickDuration, 1.0);
+        rightPressOffset = mouseClickDepth * Math.sin(Math.PI * t);
+        if (mouseRightClickTime >= mouseClickDuration) {
+            mouseRightClickAnimating = false;
+            mouseRightClickTime = 0;
+            rightPressOffset = 0.0;
+        }
+    }
+
+    if (mouseScrollActive) {
+        // rotate wheel continuously
+        mouseWheelAngle = (mouseWheelAngle + 360.0 * dt * 1.5) % 360.0;
+    }
+
     const mouseIndexStart = monitorIndexCount + tableIndexCount;
-    if (mouseIndexCount > 0) {
+
+    // Draw mouse parts separately so we can animate palm (press) and wheel (spin)
+    // 1) Base
+    if (mouseBaseIndexCount > 0) {
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
+        let invM = inverse(mvmMouse);
+        let trsM = transpose(invM);
+        normalMatrix = mat3(
+            trsM[0][0], trsM[0][1], trsM[0][2],
+            trsM[1][0], trsM[1][1], trsM[1][2],
+            trsM[2][0], trsM[2][1], trsM[2][2]
+        );
+        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
         if (wireframe) {
-            for (let i = 0; i < mouseIndexCount; i += 3) {
-                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, (mouseIndexStart + i) * 2);
+            for (let i = mouseBaseIndexStart; i < mouseBaseIndexStart + mouseBaseIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
             }
         } else {
-            gl.drawElements(gl.TRIANGLES, mouseIndexCount, gl.UNSIGNED_SHORT, mouseIndexStart * 2);
+            gl.drawElements(gl.TRIANGLES, mouseBaseIndexCount, gl.UNSIGNED_SHORT, mouseBaseIndexStart * 2);
+        }
+    }
+
+    // 2) Body
+    if (mouseBodyIndexCount > 0) {
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
+        let invM = inverse(mvmMouse);
+        let trsM = transpose(invM);
+        normalMatrix = mat3(
+            trsM[0][0], trsM[0][1], trsM[0][2],
+            trsM[1][0], trsM[1][1], trsM[1][2],
+            trsM[2][0], trsM[2][1], trsM[2][2]
+        );
+        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+        if (wireframe) {
+            for (let i = mouseBodyIndexStart; i < mouseBodyIndexStart + mouseBodyIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, mouseBodyIndexCount, gl.UNSIGNED_SHORT, mouseBodyIndexStart * 2);
+        }
+    }
+
+    // 3) Palm (rear/top of the mouse)
+    if (mousePalmIndexCount > 0) {
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmMouse));
+        let invP = inverse(mvmMouse);
+        let trsP = transpose(invP);
+        normalMatrix = mat3(
+            trsP[0][0], trsP[0][1], trsP[0][2],
+            trsP[1][0], trsP[1][1], trsP[1][2],
+            trsP[2][0], trsP[2][1], trsP[2][2]
+        );
+        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+        if (wireframe) {
+            for (let i = mousePalmIndexStart; i < mousePalmIndexStart + mousePalmIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, mousePalmIndexCount, gl.UNSIGNED_SHORT, mousePalmIndexStart * 2);
+        }
+    }
+
+    // 3) Left button (animated press)
+    if (mouseLeftIndexCount > 0) {
+        let mvmLeft = mvmMouse;
+        mvmLeft = mult(mvmLeft, translate(mouseLeftPivot[0], mouseLeftPivot[1], mouseLeftPivot[2]));
+        mvmLeft = mult(mvmLeft, translate(0, -leftPressOffset, 0));
+        mvmLeft = mult(mvmLeft, translate(-mouseLeftPivot[0], -mouseLeftPivot[1], -mouseLeftPivot[2]));
+
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmLeft));
+        let invL = inverse(mvmLeft);
+        let trsL = transpose(invL);
+        normalMatrix = mat3(
+            trsL[0][0], trsL[0][1], trsL[0][2],
+            trsL[1][0], trsL[1][1], trsL[1][2],
+            trsL[2][0], trsL[2][1], trsL[2][2]
+        );
+        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+        if (wireframe) {
+            for (let i = mouseLeftIndexStart; i < mouseLeftIndexStart + mouseLeftIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, mouseLeftIndexCount, gl.UNSIGNED_SHORT, mouseLeftIndexStart * 2);
+        }
+    }
+
+    // 4) Right button (animated press)
+    if (mouseRightIndexCount > 0) {
+        let mvmRight = mvmMouse;
+        mvmRight = mult(mvmRight, translate(mouseRightPivot[0], mouseRightPivot[1], mouseRightPivot[2]));
+        mvmRight = mult(mvmRight, translate(0, -rightPressOffset, 0));
+        mvmRight = mult(mvmRight, translate(-mouseRightPivot[0], -mouseRightPivot[1], -mouseRightPivot[2]));
+
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmRight));
+        let invR = inverse(mvmRight);
+        let trsR = transpose(invR);
+        normalMatrix = mat3(
+            trsR[0][0], trsR[0][1], trsR[0][2],
+            trsR[1][0], trsR[1][1], trsR[1][2],
+            trsR[2][0], trsR[2][1], trsR[2][2]
+        );
+        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+        if (wireframe) {
+            for (let i = mouseRightIndexStart; i < mouseRightIndexStart + mouseRightIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, mouseRightIndexCount, gl.UNSIGNED_SHORT, mouseRightIndexStart * 2);
+        }
+    }
+
+    // 4) Wheel (animated spin)
+    if (mouseWheelIndexCount > 0) {
+        let mvmWheel = mvmMouse;
+        mvmWheel = mult(mvmWheel, translate(mouseWheelPivot[0], mouseWheelPivot[1], mouseWheelPivot[2]));
+        mvmWheel = mult(mvmWheel, rotate(mouseWheelAngle, vec3(1, 0, 0)));
+        mvmWheel = mult(mvmWheel, translate(-mouseWheelPivot[0], -mouseWheelPivot[1], -mouseWheelPivot[2]));
+
+        gl.uniformMatrix4fv(modelViewMatrixLoc, false, flatten(mvmWheel));
+        let invW = inverse(mvmWheel);
+        let trsW = transpose(invW);
+        normalMatrix = mat3(
+            trsW[0][0], trsW[0][1], trsW[0][2],
+            trsW[1][0], trsW[1][1], trsW[1][2],
+            trsW[2][0], trsW[2][1], trsW[2][2]
+        );
+        gl.uniformMatrix3fv(lightingUniforms.normalMatrix, false, flatten(normalMatrix));
+        if (wireframe) {
+            for (let i = mouseWheelIndexStart; i < mouseWheelIndexStart + mouseWheelIndexCount; i += 3) {
+                gl.drawElements(gl.LINE_LOOP, 3, gl.UNSIGNED_SHORT, i * 2);
+            }
+        } else {
+            gl.drawElements(gl.TRIANGLES, mouseWheelIndexCount, gl.UNSIGNED_SHORT, mouseWheelIndexStart * 2);
         }
     }
 
@@ -1020,29 +1255,57 @@ function updateCameraFromSpherical() {
 function setupEventListeners() {
     canvas.addEventListener('mousedown', (e) => {
         mouseDown = true;
+        // If Shift is held when pressing mouse, enable panning mode
+        mousePan = e.shiftKey;
         lastMouseX = e.clientX;
         lastMouseY = e.clientY;
     });
     
     canvas.addEventListener('mouseup', () => {
         mouseDown = false;
+        mousePan = false;
     });
     
     canvas.addEventListener('mousemove', (e) => {
-        if (mouseDown) {
-            const deltaX = e.clientX - lastMouseX;
-            const deltaY = e.clientY - lastMouseY;
-            
+        if (!mouseDown) return;
+
+        const deltaX = e.clientX - lastMouseX;
+        const deltaY = e.clientY - lastMouseY;
+
+        if (mousePan) {
+            // Pan camera: translate both eye and at along camera right and up axes
+            // Compute look (from eye to at) and camera basis
+            const look = vec3(atX - eyeX, atY - eyeY, atZ - eyeZ);
+            const lookN = normalize(look);
+            const upVec = vec3(upX, upY, upZ);
+            const right = normalize(cross(lookN, upVec));
+            const upCam = normalize(cross(right, lookN));
+
+            // pan scaling factor; scales with camera distance for nicer feel
+            const panFactor = 0.002 * cameraRadius;
+            const panX = -deltaX * panFactor;
+            const panY = deltaY * panFactor;
+
+            const tx = right[0] * panX + upCam[0] * panY;
+            const ty = right[1] * panX + upCam[1] * panY;
+            const tz = right[2] * panX + upCam[2] * panY;
+
+            eyeX += tx; eyeY += ty; eyeZ += tz;
+            atX += tx; atY += ty; atZ += tz;
+
+            // Update spherical coordinates and UI sliders
+            initializeSphericalCoords();
+            updateCameraUI();
+        } else {
+            // Orbit rotation as before
             cameraTheta += deltaX * 0.01;
             cameraPhi += deltaY * 0.01;
-            
             cameraPhi = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraPhi));
-            
             updateCameraFromSpherical();
-            
-            lastMouseX = e.clientX;
-            lastMouseY = e.clientY;
         }
+
+        lastMouseX = e.clientX;
+        lastMouseY = e.clientY;
     });
     
     canvas.addEventListener('wheel', (e) => {
@@ -1139,6 +1402,18 @@ function setupEventListeners() {
         }
     });
 
+    // Scale slider wiring (dynamic scale with anchor at foot)
+    const scaleSlider = document.getElementById('scale');
+    const scaleSpan = document.getElementById('scale-value');
+    if (scaleSlider && scaleSpan) {
+        scaleSlider.addEventListener('input', () => {
+            const v = parseFloat(scaleSlider.value);
+            scaleSpan.textContent = v.toFixed(2);
+        });
+        // initialize display value
+        scaleSpan.textContent = parseFloat(scaleSlider.value).toFixed(2);
+    }
+
     // --- EVENT LISTENER UNTUK SLIDER MEJA ---
     const tableSlider = document.getElementById('table-pos-x');
     const tableSpan = document.getElementById('table-pos-x-value');
@@ -1165,6 +1440,49 @@ function setupEventListeners() {
         mouseSliderZ.addEventListener('input', () => {
             mousePosZ = parseFloat(mouseSliderZ.value); 
             mouseSpanZ.textContent = mousePosZ.toFixed(2);
+        });
+    }
+    
+    // Table scale slider wiring
+    const tableScaleSlider = document.getElementById('table-scale');
+    const tableScaleSpan = document.getElementById('table-scale-value');
+    if (tableScaleSlider && tableScaleSpan) {
+        tableScaleSlider.addEventListener('input', () => {
+            tableScaleSpan.textContent = parseFloat(tableScaleSlider.value).toFixed(2);
+        });
+        tableScaleSpan.textContent = parseFloat(tableScaleSlider.value).toFixed(2);
+    }
+
+    // Mouse scale slider wiring
+    const mouseScaleSlider = document.getElementById('mouse-scale');
+    const mouseScaleSpan = document.getElementById('mouse-scale-value');
+    if (mouseScaleSlider && mouseScaleSpan) {
+        mouseScaleSlider.addEventListener('input', () => {
+            mouseScaleSpan.textContent = parseFloat(mouseScaleSlider.value).toFixed(2);
+        });
+        mouseScaleSpan.textContent = parseFloat(mouseScaleSlider.value).toFixed(2);
+    }
+    
+    // Mouse click (left/right) and scroll buttons
+    const mouseLeftBtn = document.getElementById('mouse-left-click-btn');
+    const mouseRightBtn = document.getElementById('mouse-right-click-btn');
+    const mouseScrollBtn = document.getElementById('mouse-scroll-btn');
+    if (mouseLeftBtn) {
+        mouseLeftBtn.addEventListener('click', () => {
+            mouseLeftClickAnimating = true;
+            mouseLeftClickTime = 0;
+        });
+    }
+    if (mouseRightBtn) {
+        mouseRightBtn.addEventListener('click', () => {
+            mouseRightClickAnimating = true;
+            mouseRightClickTime = 0;
+        });
+    }
+    if (mouseScrollBtn) {
+        mouseScrollBtn.addEventListener('click', () => {
+            mouseScrollActive = !mouseScrollActive;
+            mouseScrollBtn.textContent = mouseScrollActive ? 'Stop Scroll' : 'Toggle Scroll';
         });
     }
     // ----------------------------------------------
