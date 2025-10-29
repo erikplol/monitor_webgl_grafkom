@@ -150,7 +150,8 @@ function init() {
     render();
 }
 
-// --- FUNGSI MEJA DIPERBARUI (PANEL COKLAT MENGHADAP DEPAN) ---
+
+// --- FUNGSI MEJA DIPERBARUI (PANEL COKLAT LEBAR PENUH) ---
 function createTable() {
     
     const darkWoodColor = vec4(0.3, 0.2, 0.15, 1.0); 
@@ -164,7 +165,7 @@ function createTable() {
     const tableTopY = -0.29 - (tableTopHeight / 2); // Center Y = -0.315
     
     // Dimensi Panel Kaki Samping (Tebal, menghadap samping)
-    const panelHeight = 0.7; 
+    const panelHeight = 0.7; // TINGGI PENUH KAKI
     const panelY = tableTopY - (tableTopHeight / 2) - (panelHeight / 2); // Center Y = -0.69
     const sidePanelThickness = 0.04; // tebal di X
     const sidePanelDepth = 0.9;      // dalam di Z
@@ -180,56 +181,63 @@ function createTable() {
     createCubeWithShininess(sidePanelThickness, panelHeight, sidePanelDepth, darkWoodColor, sidePanelXOffset, panelY, 0, bodyShininess);
     
     // --- Panel Depan (Putih dan Coklat) ---
-    // Ini semua adalah panel tipis yang menghadap ke depan
-    const frontPanelThickness = 0.02; // Tipis di Z
-    const frontPanelHeight = panelHeight * 0.9; // Sedikit lebih pendek
-    const frontPanelY = panelY - (panelHeight - frontPanelHeight) / 2; // -0.725
-    // Posisikan Z-nya agar sedikit di belakang tepi depan panel samping
+    const frontPanelThickness = 0.02; // KETEBALAN TIPIS di Z (untuk panel putih & coklat)
     const frontPanelZ = (-sidePanelDepth / 2) + 0.1 + (frontPanelThickness / 2); // -0.34
     
+    // --- PERUBAHAN DI SINI (Menghitung batas dalam) ---
     // Tepi dalam panel kiri
-    const leftInnerEdge = -sidePanelXOffset + (sidePanelThickness / 2); // -0.93 + 0.02 = -0.91
+    const leftInnerEdge = -sidePanelXOffset + (sidePanelThickness / 2); // -0.91
     // Tepi dalam panel kanan
-    const rightInnerEdge = sidePanelXOffset - (sidePanelThickness / 2); // 0.93 - 0.02 = 0.91
+    const rightInnerEdge = sidePanelXOffset - (sidePanelThickness / 2); // 0.91
     
-    // Tentukan lebar bagian-bagiannya
+    // Hitung total lebar ruang antar kaki
+    const totalInnerWidth = rightInnerEdge - leftInnerEdge; // 0.91 - (-0.91) = 1.82
+    // --- AKHIR PERUBAHAN ---
+
+    // 4. Panel Putih (Horizontal, Pendek)
     const whitePanelWidth = 1.2;
-    const brownPanelWidth = 0.2; // Panel coklat di sebelah putih
-    // Sisa bolongan = (rightInnerEdge - leftInnerEdge) - whitePanelWidth - brownPanelWidth
-    // (0.91 - (-0.91)) - 1.2 - 0.2 = 1.82 - 1.2 - 0.2 = 0.42
+    const whitePanelHeight = panelHeight * 0.9; // Sedikit lebih pendek dari tinggi penuh
+    const whitePanelY = panelY - (panelHeight - whitePanelHeight) / 2; // Posis Y sedikit ke atas
     
-    // 4. Panel Putih (Menghadap Depan)
-    // Posisikan menempel di kiri
     const whitePanelCenterX = leftInnerEdge + (whitePanelWidth / 2); // -0.91 + 0.6 = -0.31
     createCubeWithShininess(
-        whitePanelWidth,
-        frontPanelHeight,
-        frontPanelThickness,
+        whitePanelWidth,      // Lebar (Horizontal)
+        whitePanelHeight,     // Tinggi (Pendek)
+        frontPanelThickness,  // Kedalaman (Tipis)
         whitePanelColor,
-        whitePanelCenterX,
-        frontPanelY,
-        frontPanelZ,
+        whitePanelCenterX,    // X
+        whitePanelY,          // Y (Agak ke atas)
+        frontPanelZ,          // Z (Di depan)
         bodyShininess
     );
     
-    // 5. Panel Sekat Coklat (Menghadap Depan)
-    // Posisikan menempel di sebelah kanan panel putih
-    const whitePanelRightEdge = whitePanelCenterX + (whitePanelWidth / 2); // -0.31 + 0.6 = 0.29
-    const brownPanelCenterX = whitePanelRightEdge + (brownPanelWidth / 2); // 0.29 + 0.1 = 0.39
+    // 5. Panel Sekat Coklat (Vertikal, Penuh, Tipis)
+    
+    // --- PERUBAHAN UTAMA DI SINI ---
+    // Hitung sisa lebar yang harus diisi oleh panel coklat
+    // (Lebar total - lebar panel putih)
+    const brownPanelWidth = totalInnerWidth - whitePanelWidth; // 1.82 - 1.2 = 0.62
+    
+    // Tepi kanan panel putih
+    const whitePanelRightEdge = whitePanelCenterX + (whitePanelWidth / 2); // 0.29
+    
+    // Center X-nya adalah (tepi_kanan_putih + setengah_lebar_panel_coklat_baru)
+    const brownPanelCenterX = whitePanelRightEdge + (brownPanelWidth / 2); // 0.29 + (0.62 / 2) = 0.60
+    // --- AKHIR PERUBAHAN ---
     
     createCubeWithShininess(
-        brownPanelWidth,
-        frontPanelHeight,
-        frontPanelThickness,
-        darkWoodColor, // Warna coklat
-        brownPanelCenterX,
-        frontPanelY,
-        frontPanelZ,
+        brownPanelWidth,       // Lebar (0.62, hasil hitungan)
+        panelHeight,           // Tinggi (PENUH, 0.7, sama dgn kaki)
+        frontPanelThickness,   // Kedalaman (TIPIS, 0.02, sama dgn putih)
+        darkWoodColor,         // Warna coklat
+        brownPanelCenterX,     // X (Sebelah putih, 0.60)
+        panelY,                // Y (Center sama dgn kaki)
+        frontPanelZ,           // Z (Di depan, sama dgn putih)
         bodyShininess
     );
-    // Sisa ruang dari x=0.49 (0.39 + 0.1) ke x=0.91 (tepi dalam kanan) akan menjadi "bolongan"
 }
 // ----------------------------------------
+// -------------------------------------------------------------------------------
 
 
 function createMonitor() {
